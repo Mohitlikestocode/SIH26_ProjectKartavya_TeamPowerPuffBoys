@@ -1,0 +1,68 @@
+body {
+  margin: 0;
+  background: #F3F4F6;
+  color: #1A1D23;
+  font-family: "Noto Sans", "Noto Sans Devanagari", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: #1F5AA6;
+  text-decoration: none;
+}
+a:hover {
+  color: #0A2240;
+  text-decoration: underline;
+}
+
+button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible {
+  outline: 3px solid #B45309;
+  outline-offset: 2px;
+}
+
+nav[aria-label="Primary"] {
+  scrollbar-width: thin;
+}
+
+::selection {
+  background: #0A2240;
+  color: #fff;
+}
+
+/* Elements that carried a bespoke style-hover / style-focus in the source design */
+.skip-link:focus {
+  left: 12px !important;
+  top: 12px !important;
+  z-index: 50;
+  background: #0A2240;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 3px;
+}
+
+.nav-btn:hover {
+  background: #F1F4F9 !important;
+}
+
+.course-card:hover {
+  border-color: #0A2240 !important;
+}
+
+.course-cta:hover {
+  background: #0A2240 !important;
+  color: #fff !important;
+}
+
+.path-item:hover {
+  border-color: #0A2240 !important;
+  background: #fff !important;
+}
+
+.path-item-cta:hover {
+  background: #0A2240 !important;
+  color: #fff !important;
+}
