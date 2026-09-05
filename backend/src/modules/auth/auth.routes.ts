@@ -1,7 +1,10 @@
 import { Router } from "express";
-import * as controller from "./auth.controller";
+import { registerHandler, loginHandler, meHandler } from "./auth.controller";
+import { requireAuth } from "../../middleware/auth";
 
-// Auth routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const authRouter = Router();
 
-// TODO: wire actual endpoints for the Auth module.
+// Mock SSO — architecturally consistent with a future real Parichay/SSO handoff.
+authRouter.post("/register", registerHandler);
+authRouter.post("/login", loginHandler);
+authRouter.get("/me", requireAuth, meHandler);

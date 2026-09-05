@@ -1,7 +1,5 @@
-// Kartavya (SIH26101) backend — Prisma schema.
-// Models land in Phase 1 (see prompt.md build order): User, Role, CompetencyDomain,
-// SubSkill, RoleCompetencyRequirement, UserCompetencyScore, Assessment, Attempt,
-// ViolationEvent, Session, Course, TrainingProgramme.
+// Kartavya (SIH26101) backend — Prisma schema. See ../../prompt.md for the
+// shared Assessment/Attempt contract and phased build order.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,4 +8,238 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / users
+// ---------------------------------------------------------------------------
+
+enum RoleName {
+  learner
+  trainer
+  org_admin
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         RoleName @default(learner)
+
+  designation String?
+  department  String?
+  cadre       String? // ISS / SSS / State DES / MoSPI-NSO
+  state       String?
+  experienceYears Int?
+
+  targetRoleId String?
+  targetRole   TargetRole? @relation(fields: [targetRoleId], references: [id])
+
+  competencyScores UserCompetencyScore[]
+  attempts         Attempt[]
+  createdAssessments Assessment[] @relation("AssessmentCreatedBy")
+  createdSessions  Session[]     @relation("SessionCreatedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Competency ontology
+// ---------------------------------------------------------------------------
+
+model CompetencyDomain {
+  id   String @id @default(cuid())
+  name String @unique // Statistical | Technical | Digital Governance | Behavioural/Managerial
+
+  subSkills SubSkill[]
+
+  createdAt DateTime @default(now())
+}
+
+model SubSkill {
+  id       String           @id @default(cuid())
+  name     String
+  domainId String
+  domain   CompetencyDomain @relation(fields: [domainId], references: [id])
+
+  requirements RoleCompetencyRequirement[]
+  scores       UserCompetencyScore[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([domainId, name])
+}
+
+model TargetRole {
+  id          String @id @default(cuid())
+  title       String @unique
+  description String?
+  cadre       String? // typical cadre this role suits (ISS/SSS/DES/...)
+
+  requirements RoleCompetencyRequirement[]
+  users        User[]
+
+  createdAt DateTime @default(now())
+}
+
+// Required proficiency level (0-100) for a sub-skill, for a given target role.
+model RoleCompetencyRequirement {
+  id           String     @id @default(cuid())
+  targetRoleId String
+  targetRole   TargetRole @relation(fields: [targetRoleId], references: [id])
+  subSkillId   String
+  subSkill     SubSkill   @relation(fields: [subSkillId], references: [id])
+  requiredLevel Int // 0-100
+
+  @@unique([targetRoleId, subSkillId])
+}
+
+// Current proficiency level (0-100) for a sub-skill, for a given user.
+// Seeded/mock initially; later derived from Attempt scores.
+model UserCompetencyScore {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  subSkillId String
+  subSkill   SubSkill @relation(fields: [subSkillId], references: [id])
+  level      Int // 0-100
+  source     String   @default("seed") // seed | attempt | manual
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, subSkillId])
+}
+
+// ---------------------------------------------------------------------------
+// Assessments / Attempts (shared contract with the MCQ module)
+// ---------------------------------------------------------------------------
+
+enum AssessmentType {
+  mcq
+  simulation
+  diagnostic
+}
+
+model Assessment {
+  id              String         @id @default(cuid())
+  type            AssessmentType
+  title           String
+  domainTags      String[] // subset of the 4 domain names
+  subSkillTags    String[] // sub-skill names, e.g. "Sampling Methodology"
+
+  createdById String
+  createdBy   User   @relation("AssessmentCreatedBy", fields: [createdById], references: [id])
+
+  // Owned by the MCQ teammate's module — loosely typed so this side never
+  // needs to know their internal schema.
+  questions Json?
+
+  // Owned by this module (Phase 4) — ScenarioGraph shape.
+  scenario Json?
+
+  timeLimitSeconds Int
+  passingScore     Int
+
+  sessions Session[]
+  attempts Attempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AttemptStatus {
+  in_progress
+  submitted
+  kicked
+  expired
+}
+
+model Attempt {
+  id           String        @id @default(cuid())
+  assessmentId String
+  assessment   Assessment    @relation(fields: [assessmentId], references: [id])
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  sessionId    String?
+  session      Session?      @relation(fields: [sessionId], references: [id])
+
+  answers          Json? // mcq answers OR simulation decision path
+  score            Int?
+  perDomainScore   Json? // Record<domain, number>
+  perSubSkillScore Json? // Record<subSkill, number>
+
+  violations ViolationEvent[]
+  status     AttemptStatus    @default(in_progress)
+
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+}
+
+enum ViolationType {
+  phone_detected
+  multiple_faces
+  no_face
+  tab_switch
+  fullscreen_exit
+}
+
+model ViolationEvent {
+  id        String        @id @default(cuid())
+  attemptId String
+  attempt   Attempt       @relation(fields: [attemptId], references: [id])
+  type      ViolationType
+  timestamp DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Sessions (QR join flow)
+// ---------------------------------------------------------------------------
+
+model Session {
+  id           String     @id @default(cuid())
+  name         String
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("SessionCreatedBy", fields: [createdById], references: [id])
+
+  targetAudience String? // free text: cadre / department scope
+  joinToken      String   @unique
+  expiresAt      DateTime
+
+  attempts Attempt[]
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Training catalogues (iGOT mock + NSSTA/TPAC)
+// ---------------------------------------------------------------------------
+
+model Course {
+  id            String   @id @default(cuid())
+  doId          String   @unique // do_-style ID, modeled on Sunbird composite/v3/search
+  title         String
+  provider      String   @default("iGOT Karmayogi")
+  durationHours Int?
+  competencyTags String[]
+  description   String?
+
+  createdAt DateTime @default(now())
+}
+
+model TrainingProgramme {
+  id            String   @id @default(cuid())
+  name          String
+  targetCadre   String[] // ISS / SSS / State DES / ...
+  durationDays  Int?
+  venue         String?
+  batchSize     Int?
+  competencyTags String[]
+  description   String?
+
+  createdAt DateTime @default(now())
 }
