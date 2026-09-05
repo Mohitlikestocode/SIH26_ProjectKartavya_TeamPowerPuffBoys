@@ -3,18 +3,19 @@ import { ApiError } from "../../middleware/errorHandler";
 import { forceKick } from "../attempts/attempts.service";
 import type { ViolationType } from "@prisma/client";
 
-// Weighted so phone detection counts more heavily than a tab switch — this
-// is the actual grading-relevant logic (backend-owned), not just a demo
-// gimmick. Any 3+ weighted violations force-submits and kicks the attempt.
+// This is the actual grading-relevant logic (backend-owned), not just a demo
+// gimmick. Every violation type counts equally — deliberately not sensitive:
+// it takes 6 warnings before an attempt is force-submitted and kicked, so a
+// single glance away or a momentary camera drop-out never ends a test.
 const VIOLATION_WEIGHTS: Record<ViolationType, number> = {
-  phone_detected: 2,
-  multiple_faces: 2,
+  phone_detected: 1,
+  multiple_faces: 1,
   no_face: 1,
   tab_switch: 1,
   fullscreen_exit: 1,
 };
 
-const KICK_THRESHOLD = 3;
+const KICK_THRESHOLD = 6;
 
 export interface LogViolationInput {
   attemptId: string;

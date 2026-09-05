@@ -78,7 +78,7 @@
       <div class="banner" id="banner"></div>
       <div class="terminated" id="terminated">
         <h2>Test terminated</h2>
-        <div>Weighted violation count reached the kick threshold (3), matching the backend's <code>forceKick</code> logic.</div>
+        <div>6 warnings reached — matching the backend's <code>forceKick</code> logic.</div>
         <button class="primary" id="resetBtn">Reset demo</button>
       </div>
     </div>
@@ -91,8 +91,8 @@
 
   <div class="panel">
     <div class="card">
-      <h3>Weighted violations</h3>
-      <div class="score-row"><span class="score-num" id="scoreNum">0</span><span class="score-of">/ 3 (kick threshold)</span></div>
+      <h3>Warnings</h3>
+      <div class="score-row"><span class="score-num" id="scoreNum">0</span><span class="score-of">/ 6 (kick threshold)</span></div>
       <div class="status-line" id="statusLine">Loading detection models…</div>
     </div>
     <div class="card">
@@ -102,12 +102,14 @@
     <div class="card">
       <h3>How to trigger each check</h3>
       <div class="status-line">
-        📱 Hold a phone up to the camera → <b>phone_detected</b> (weight 2)<br/>
-        🙈 Step out of frame → <b>no_face</b> (weight 1)<br/>
-        👥 Get a second person in frame → <b>multiple_faces</b> (weight 2)<br/>
-        👀 Turn your head fully left/right → <b>looking_away</b> (weight 1, mapped to <code>no_face</code> on the backend)<br/>
-        🪟 Switch tabs / minimize → <b>tab_switch</b> (weight 1)<br/>
-        ⛶ Click "Enter fullscreen" then press Esc → <b>fullscreen_exit</b> (weight 1)
+        Every check below counts as <b>1 warning</b>. It takes <b>6</b> to end the test — a
+        single glance away or a momentary drop-out won't kick you.<br/><br/>
+        📱 Hold a phone up to the camera → <b>phone_detected</b><br/>
+        🙈 Step out of frame for ~1s → <b>no_face</b><br/>
+        👥 Get a second person in frame → <b>multiple_faces</b><br/>
+        👀 Turn your head fully left/right and hold it → <b>looking_away</b> (mapped to <code>no_face</code> on the backend)<br/>
+        🪟 Switch tabs / minimize → <b>tab_switch</b><br/>
+        ⛶ Click "Enter fullscreen" then press Esc → <b>fullscreen_exit</b>
       </div>
     </div>
     <div class="card">
@@ -141,18 +143,30 @@ import {
 // earlier coco-ssd + face-api.js combo that wasn't reliably detecting
 // anything in testing. Runs entirely client-side (WASM), same as before.
 const WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+// lite2 (float16) trades a bigger one-time download (~12 MB, cached after
+// first load) for meaningfully better small/close-up object accuracy than
+// lite0 — lite0 was missing phones held up close to the camera in testing.
 const OBJECT_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite";
+  "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite";
 const FACE_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-const KICK_THRESHOLD = 3;
-const WEIGHTS = { phone_detected: 2, multiple_faces: 2, no_face: 1, looking_away: 1, tab_switch: 1, fullscreen_exit: 1 };
+// 6 warnings, not 3 — a single glance away or a momentary drop-out
+// shouldn't end the test. Every check is worth the same (1) rather than
+// weighting phone/multi-face higher, per feedback to not be over-sensitive.
+const KICK_THRESHOLD = 6;
+const WEIGHTS = { phone_detected: 1, multiple_faces: 1, no_face: 1, looking_away: 1, tab_switch: 1, fullscreen_exit: 1 };
 // The shared ViolationType enum (prisma schema) has no "looking_away" entry —
 // gaze-away events are reported to the backend as "no_face", the closest
 // existing type. Kept as a distinct label in this page's own UI/log.
 const BACKEND_TYPE = { looking_away: "no_face" };
-const OBJECT_SCORE_THRESHOLD = 0.35;
+// Reported at model level (so the live readout shows what's actually being
+// seen even below the "count it as a violation" bar), gated higher below.
+const OBJECT_MODEL_THRESHOLD = 0.15;
+const PHONE_LOG_THRESHOLD = 0.35;
+// Require the condition to hold for this many consecutive checks before it
+// counts as a warning — filters out a single dropped frame or quick blink.
+const FACE_STREAK_TO_LOG = 2;
 
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
@@ -176,7 +190,9 @@ let kicked = false;
 let weightedCount = 0;
 let entries = [];
 const lastLogged = {};
-const COOLDOWN_MS = 4000;
+const COOLDOWN_MS = 5000;
+let noFaceStreak = 0;
+let lookAwayStreak = 0;
 
 function setStatus(msg, isError) {
   statusLine.textContent = msg;
@@ -259,10 +275,10 @@ async function loadModels() {
   setStatus("Loading MediaPipe vision WASM runtime…");
   const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
 
-  setStatus("Loading object detector model (efficientdet_lite0, ~4.4 MB)…");
+  setStatus("Loading object detector model (efficientdet_lite2, ~12 MB — one-time download)…");
   objectDetector = await ObjectDetector.createFromOptions(vision, {
     baseOptions: { modelAssetPath: OBJECT_MODEL_URL },
-    scoreThreshold: OBJECT_SCORE_THRESHOLD,
+    scoreThreshold: OBJECT_MODEL_THRESHOLD,
     maxResults: 8,
     runningMode: "VIDEO",
   });
@@ -321,10 +337,12 @@ async function detectionLoop(now) {
       );
       for (const d of detections) {
         const box = d.boundingBox;
-        const isPhone = d.categories[0]?.categoryName === "cell phone";
-        drawBox(box.originX, box.originY, box.width, box.height, isPhone ? "#E53935" : "#607D8B", d.categories[0]?.categoryName);
-        if (isPhone) {
-          logViolation("phone_detected", `Phone detected (${Math.round(d.categories[0].score * 100)}% confidence)`);
+        const category = d.categories[0];
+        const isPhone = /phone/i.test(category?.categoryName ?? "");
+        const overThreshold = isPhone && category.score >= PHONE_LOG_THRESHOLD;
+        drawBox(box.originX, box.originY, box.width, box.height, isPhone ? "#E53935" : "#607D8B", `${category?.categoryName} ${(category?.score * 100).toFixed(0)}%`);
+        if (overThreshold) {
+          logViolation("phone_detected", `Phone detected (${Math.round(category.score * 100)}% confidence)`);
         }
       }
     } catch (err) {
@@ -340,24 +358,38 @@ async function detectionLoop(now) {
       readoutLines.push(`faces: ${faces.length}`);
 
       if (faces.length === 0) {
-        logViolation("no_face", "No face detected in frame");
+        noFaceStreak += 1;
+        lookAwayStreak = 0;
+        readoutLines.push(`no-face streak: ${noFaceStreak}/${FACE_STREAK_TO_LOG}`);
+        if (noFaceStreak >= FACE_STREAK_TO_LOG) logViolation("no_face", "No face detected in frame");
       } else if (faces.length > 1) {
+        noFaceStreak = 0;
+        lookAwayStreak = 0;
         logViolation("multiple_faces", `${faces.length} faces detected in frame`);
       } else {
+        noFaceStreak = 0;
         const lm = faces[0];
         // Face mesh topology: 234 = left cheek edge, 454 = right cheek edge, 1 = nose tip.
         const left = lm[234], right = lm[454], nose = lm[1];
         const faceWidth = right.x - left.x;
         const ratio = faceWidth !== 0 ? (nose.x - left.x) / faceWidth : 0.5;
-        readoutLines.push(`nose ratio: ${ratio.toFixed(2)} (0.32-0.68 = facing camera)`);
 
         const w = overlay.width, h = overlay.height;
         drawBox(left.x * w - 4, left.y * h - 4, 8, 8, "#4CAF50");
         drawBox(right.x * w - 4, right.y * h - 4, 8, 8, "#4CAF50");
         drawBox(nose.x * w - 4, nose.y * h - 4, 8, 8, "#FFD54F");
 
-        if (ratio < 0.32 || ratio > 0.68) {
-          logViolation("looking_away", `Head turned away from camera (nose ratio ${ratio.toFixed(2)})`);
+        // Wider band (0.25-0.75) than before — a quick glance shouldn't
+        // register as "looking away", only a substantial, sustained turn.
+        if (ratio < 0.25 || ratio > 0.75) {
+          lookAwayStreak += 1;
+          readoutLines.push(`nose ratio: ${ratio.toFixed(2)} — looking-away streak: ${lookAwayStreak}/${FACE_STREAK_TO_LOG}`);
+          if (lookAwayStreak >= FACE_STREAK_TO_LOG) {
+            logViolation("looking_away", `Head turned away from camera (nose ratio ${ratio.toFixed(2)})`);
+          }
+        } else {
+          lookAwayStreak = 0;
+          readoutLines.push(`nose ratio: ${ratio.toFixed(2)} (0.25-0.75 = facing camera)`);
         }
       }
     } catch (err) {
@@ -388,6 +420,8 @@ function resetDemo() {
   kicked = false;
   weightedCount = 0;
   entries = [];
+  noFaceStreak = 0;
+  lookAwayStreak = 0;
   Object.keys(lastLogged).forEach(k => delete lastLogged[k]);
   scoreNum.textContent = "0";
   renderLog();
