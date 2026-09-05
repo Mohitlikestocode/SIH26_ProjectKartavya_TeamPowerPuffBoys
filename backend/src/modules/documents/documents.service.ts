@@ -19,7 +19,8 @@ export async function ingestDocument(file: UploadedFile) {
     throw new ApiError(400, `Unsupported file type: ${file.mimetype}. Supported: PDF, DOCX, PPTX.`);
   }
 
-  const storedFilename = `${randomUUID()}-${file.originalname}`;
+  const safeOriginal = path.basename(file.originalname).replace(/[\\/\0]/g, "_");
+  const storedFilename = `${randomUUID()}-${safeOriginal}`;
   const storagePath = path.join(env.uploadDir, storedFilename);
   await mkdir(env.uploadDir, { recursive: true });
   await writeFile(storagePath, file.buffer);
