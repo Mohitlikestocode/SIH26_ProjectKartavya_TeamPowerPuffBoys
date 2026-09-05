@@ -33,6 +33,7 @@ backend/
 **Phase 2 (Competency + Recommendations)** — done: gap-scoring (`/api/competency/gap-map`, radar-chart-ready), iGOT/NSSTA search adapters (same response shape), rules-based recommendation engine with a "why recommended" string per candidate (tag-overlap x gap-magnitude; the pgvector semantic layer is a deliberate follow-up, not yet built).
 
 **Phase 3 (Sessions, QR, Proctoring)** — done:
+- Every `Assessment` carries `isProctored: boolean` (default `false`, set at creation time — `POST /api/assessments`). This is the trainer's per-test toggle: if `false`, the assessment runner shouldn't launch the camera harness at all, and `POST /api/violations` rejects events against a non-proctored attempt (`400 This assessment is not proctored`) as a backend-enforced backstop — proctoring can't be turned on client-side against the backend's knowledge.
 - `POST /api/sessions` (trainer/org_admin) creates a `Session` for an `Assessment`, signs a short-lived join token, returns a QR code as a base64 PNG data URL (`qrDataUrl`) plus the raw `joinUrl` (`{FRONTEND_URL}/join/{sessionId}?token=...`).
 - `POST /api/sessions/:id/regenerate-qr` invalidates the previous QR (old token stops working) and issues a new one.
 - `POST /api/sessions/:id/join` is what the frontend's scan page calls after decoding the QR: validates the token + expiry, then creates (or resumes) an `Attempt` and hands back `{ attempt, assessment }` so the frontend can render the questions immediately.

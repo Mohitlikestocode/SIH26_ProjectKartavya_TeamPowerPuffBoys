@@ -11,6 +11,7 @@ export interface CreateAssessmentInput {
   scenario?: unknown; // owned by the Simulations module (Phase 4)
   timeLimitSeconds: number;
   passingScore: number;
+  isProctored?: boolean;
 }
 
 export async function createAssessment(createdById: string, input: CreateAssessmentInput) {
@@ -24,6 +25,7 @@ export async function createAssessment(createdById: string, input: CreateAssessm
       scenario: input.scenario as never,
       timeLimitSeconds: input.timeLimitSeconds,
       passingScore: input.passingScore,
+      isProctored: input.isProctored ?? false,
       createdById,
     },
   });

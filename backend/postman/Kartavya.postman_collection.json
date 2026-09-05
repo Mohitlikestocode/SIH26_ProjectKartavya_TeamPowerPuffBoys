@@ -123,7 +123,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"mcq\",\n  \"title\": \"Sampling Methodology Quick Check\",\n  \"domainTags\": [\"Statistical\"],\n  \"subSkillTags\": [\"Sampling\"],\n  \"timeLimitSeconds\": 600,\n  \"passingScore\": 50,\n  \"questions\": [\n    { \"id\": \"q1\", \"stem\": \"Which sampling method gives every unit equal selection probability?\", \"options\": [\"SRS\", \"Convenience\", \"Quota\", \"Snowball\"], \"correctIndex\": 0, \"domainTag\": \"Statistical\", \"subSkillTag\": \"Sampling\" }\n  ]\n}"
+              "raw": "{\n  \"type\": \"mcq\",\n  \"title\": \"Sampling Methodology Quick Check\",\n  \"domainTags\": [\"Statistical\"],\n  \"subSkillTags\": [\"Sampling\"],\n  \"timeLimitSeconds\": 600,\n  \"passingScore\": 50,\n  \"isProctored\": true,\n  \"questions\": [\n    { \"id\": \"q1\", \"stem\": \"Which sampling method gives every unit equal selection probability?\", \"options\": [\"SRS\", \"Convenience\", \"Quota\", \"Snowball\"], \"correctIndex\": 0, \"domainTag\": \"Statistical\", \"subSkillTag\": \"Sampling\" }\n  ]\n}"
             }
           }
         },

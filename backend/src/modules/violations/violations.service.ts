@@ -24,9 +24,18 @@ export interface LogViolationInput {
 }
 
 export async function logViolation(input: LogViolationInput) {
-  const attempt = await prisma.attempt.findUnique({ where: { id: input.attemptId } });
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: input.attemptId },
+    include: { assessment: true },
+  });
   if (!attempt) throw new ApiError(404, "Attempt not found");
   if (attempt.userId !== input.requestingUserId) throw new ApiError(403, "Not your attempt");
+  if (!attempt.assessment.isProctored) {
+    // The trainer didn't turn proctoring on for this assessment — the
+    // frontend shouldn't even be running the camera harness, but refuse to
+    // record or act on violations here too, defense in depth.
+    throw new ApiError(400, "This assessment is not proctored");
+  }
   if (attempt.status !== "in_progress") {
     // Already terminal — accept the event for the audit log but don't re-kick.
     return { violationCount: 0, weightedCount: 0, status: attempt.status };

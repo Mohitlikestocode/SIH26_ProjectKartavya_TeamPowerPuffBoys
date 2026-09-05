@@ -142,6 +142,10 @@ model Assessment {
   timeLimitSeconds Int
   passingScore     Int
 
+  // Trainer's per-assessment choice: does the assessment runner launch the
+  // camera/proctoring harness for this one? Defaults to off — opt in.
+  isProctored Boolean @default(false)
+
   sessions Session[]
   attempts Attempt[]
 

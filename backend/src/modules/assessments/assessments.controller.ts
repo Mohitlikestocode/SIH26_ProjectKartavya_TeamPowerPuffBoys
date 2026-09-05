@@ -13,6 +13,7 @@ const createAssessmentSchema = z.object({
   scenario: z.unknown().optional(),
   timeLimitSeconds: z.number().int().positive(),
   passingScore: z.number().int().min(0).max(100),
+  isProctored: z.boolean().default(false),
 });
 
 export async function createHandler(req: Request, res: Response, next: NextFunction) {
