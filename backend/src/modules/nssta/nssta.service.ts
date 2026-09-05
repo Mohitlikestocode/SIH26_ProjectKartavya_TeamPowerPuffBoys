@@ -45,6 +45,8 @@ export async function searchProgrammes(params: NsstaSearchParams) {
         targetCadre: p.targetCadre,
         competencyTags: p.competencyTags,
         description: p.description,
+        level: p.level,
+        rating: p.rating,
       })),
     },
     page,

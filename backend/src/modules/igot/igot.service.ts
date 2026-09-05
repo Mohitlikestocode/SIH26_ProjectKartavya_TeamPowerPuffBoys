@@ -45,6 +45,8 @@ export async function searchCourses(params: IgotSearchParams) {
         duration: c.durationHours ? `${c.durationHours}h` : undefined,
         competencyTags: c.competencyTags,
         description: c.description,
+        level: c.level,
+        rating: c.rating,
       })),
     },
     page,

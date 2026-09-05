@@ -1,5 +1,6 @@
 import { prisma } from "../../config/db";
 import { ApiError } from "../../middleware/errorHandler";
+import { scoreSimulationPath, type ScenarioGraph, type ScenarioPathStep } from "../simulations/simulations.service";
 
 export interface McqAnswer {
   questionId: string;
@@ -122,9 +123,9 @@ export async function submitAttempt(opts: {
   attemptId: string;
   requestingUserId: string;
   answers: unknown;
-  // Fallback for assessment types this backend can't score itself yet
-  // (e.g. simulations before Phase 4 lands) — caller-supplied score is
-  // trusted only when the assessment has no scorable questions.
+  // Fallback for any assessment type this backend still can't score itself.
+  // mcq/diagnostic (scoreMcqLike) and simulation (scoreSimulationPath) both
+  // score themselves — nothing currently falls through to this.
   externalScore?: { score: number; perDomainScore?: Record<string, number>; perSubSkillScore?: Record<string, number> };
 }) {
   const attempt = await prisma.attempt.findUnique({
@@ -140,6 +141,10 @@ export async function submitAttempt(opts: {
   if (attempt.assessment.type === "mcq" || attempt.assessment.type === "diagnostic") {
     const answers = Array.isArray(opts.answers) ? (opts.answers as McqAnswer[]) : [];
     result = scoreMcqLike(attempt.assessment.questions, answers);
+  } else if (attempt.assessment.type === "simulation") {
+    const path = Array.isArray(opts.answers) ? (opts.answers as ScenarioPathStep[]) : [];
+    const scored = scoreSimulationPath(attempt.assessment.scenario as unknown as ScenarioGraph, path);
+    result = { score: scored.score, perDomainScore: scored.perDomainScore, perSubSkillScore: scored.perSubSkillScore };
   } else if (opts.externalScore) {
     result = {
       score: opts.externalScore.score,

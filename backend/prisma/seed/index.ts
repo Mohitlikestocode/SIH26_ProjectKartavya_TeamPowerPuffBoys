@@ -4,6 +4,8 @@ import { seedOntology } from "./ontology.seed";
 import { seedTargetRoles } from "./roles.seed";
 import { seedIgotCourses } from "./igot.seed";
 import { seedNsstaProgrammes } from "./nssta.seed";
+import { seedSyntheticWorkforce } from "./synthetic.seed";
+import { getOrCreateDiagnostic } from "../../src/modules/assessments/assessments.service";
 
 const prisma = new PrismaClient();
 
@@ -65,6 +67,15 @@ async function main() {
   await seedIgotCourses(prisma);
   await seedNsstaProgrammes(prisma);
   await seedDemoUsers();
+
+  const orgAdmin = await prisma.user.findFirst({ where: { role: "org_admin" } });
+  if (orgAdmin) {
+    await getOrCreateDiagnostic(orgAdmin.id);
+    await seedSyntheticWorkforce(prisma);
+  } else {
+    console.warn("  ! no org_admin user found — skipping diagnostic + synthetic workforce seed");
+  }
+
   console.log("Seed complete.");
 }
 

@@ -1,7 +1,10 @@
 import { Router } from "express";
-import * as controller from "./simulations.controller";
+import { listScenariosHandler, getScenarioHandler, createAssessmentHandler } from "./simulations.controller";
+import { requireAuth } from "../../middleware/auth";
+import { requireRole } from "../../middleware/rbac";
 
-// Simulations routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const simulationsRouter = Router();
 
-// TODO: wire actual endpoints for the Simulations module.
+simulationsRouter.get("/scenarios", requireAuth, listScenariosHandler);
+simulationsRouter.get("/scenarios/:id", requireAuth, getScenarioHandler);
+simulationsRouter.post("/assessments", requireAuth, requireRole("trainer", "org_admin"), createAssessmentHandler);

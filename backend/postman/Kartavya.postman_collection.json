@@ -211,6 +211,73 @@
       ]
     },
     {
+      "name": "Simulations",
+      "item": [
+        { "name": "List scenario templates", "request": { "method": "GET", "url": "{{baseUrl}}/api/simulations/scenarios" } },
+        { "name": "Get scenario graph", "request": { "method": "GET", "url": "{{baseUrl}}/api/simulations/scenarios/data-quality-check" } },
+        {
+          "name": "Create assessment from scenario (trainer/org_admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/simulations/assessments",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"scenarioId\": \"data-quality-check\"\n}" }
+          }
+        },
+        {
+          "name": "Submit simulation path (via attempts endpoint)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/attempts/{{attemptId}}/submit",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [\n    { \"nodeId\": \"start\", \"choiceId\": \"zero-yield\" },\n    { \"nodeId\": \"zero-yield-path\", \"choiceId\": \"fix-and-flag-duplicates\" }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboards",
+      "item": [
+        { "name": "Employee dashboard", "request": { "method": "GET", "url": "{{baseUrl}}/api/dashboards/employee" } },
+        {
+          "name": "Trainer dashboard",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/dashboards/trainer",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] }
+          }
+        },
+        {
+          "name": "Org heatmap (org_admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/dashboards/admin/heatmap?cadre=ISS",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] }
+          }
+        },
+        {
+          "name": "Training-effectiveness trend (org_admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/dashboards/admin/effectiveness-trend",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] }
+          }
+        },
+        {
+          "name": "Org-wide violation feed (org_admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/dashboards/admin/violations?limit=50",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] }
+          }
+        }
+      ]
+    },
+    {
       "name": "Violations / Proctoring",
       "item": [
         {

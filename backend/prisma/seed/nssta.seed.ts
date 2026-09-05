@@ -13,7 +13,7 @@ const VENUES = [
   "ISI, Kolkata (MoSPI collaboration)",
 ];
 
-interface ProgrammeSeed {
+interface ProgrammeSeedBase {
   name: string;
   targetCadre: string[];
   durationDays: number;
@@ -23,7 +23,19 @@ interface ProgrammeSeed {
   description: string;
 }
 
-export const NSSTA_PROGRAMMES: ProgrammeSeed[] = [
+function hashRating(seed: string) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) & 0x7fffffff;
+  return Math.round((3.6 + (h % 131) / 100) * 10) / 10;
+}
+
+function deriveLevel(name: string): string {
+  if (/foundation|essentials|orientation|introduction/i.test(name)) return "Beginner";
+  if (/advanced/i.test(name)) return "Advanced";
+  return "Intermediate";
+}
+
+const BASE_PROGRAMMES: ProgrammeSeedBase[] = [
   {
     name: "Foundation Course on Official Statistics",
     targetCadre: ["ISS", "SSS"],
@@ -204,7 +216,67 @@ export const NSSTA_PROGRAMMES: ProgrammeSeed[] = [
     competencyTags: ["Behavioural/Managerial", "Ethics", "Decision Making"],
     description: "Case-based training on ethical decision-making frameworks in government service delivery.",
   },
+  {
+    name: "SPSS for Survey Data Analysis",
+    targetCadre: ["ISS", "SSS"],
+    durationDays: 4,
+    venue: VENUES[1],
+    batchSize: 30,
+    competencyTags: ["Technical", "SPSS"],
+    description: "Statistical analysis and hypothesis testing workflows in SPSS for survey microdata.",
+  },
+  {
+    name: "SAS Programming for Official Statistics",
+    targetCadre: ["ISS"],
+    durationDays: 5,
+    venue: VENUES[0],
+    batchSize: 25,
+    competencyTags: ["Technical", "SAS"],
+    description: "SAS macro programming and large-dataset processing for national-survey pipelines.",
+  },
+  {
+    name: "Stata for Econometric Analysis of Survey Data",
+    targetCadre: ["ISS", "SSS"],
+    durationDays: 5,
+    venue: VENUES[3],
+    batchSize: 25,
+    competencyTags: ["Technical", "Stata"],
+    description: "Econometric modelling and survey-weighted estimation techniques in Stata.",
+  },
+  {
+    name: "Digital Signature Certificates & e-Governance Workflows",
+    targetCadre: ["ISS", "SSS", "State DES"],
+    durationDays: 2,
+    venue: VENUES[2],
+    batchSize: 45,
+    competencyTags: ["Digital Governance", "Digital Signatures"],
+    description: "DSC issuance, e-signing workflows, and legal validity of digitally signed government documents.",
+  },
+  {
+    name: "Data Visualization for Policy Communication",
+    targetCadre: ["ISS", "SSS", "State DES"],
+    durationDays: 3,
+    venue: VENUES[3],
+    batchSize: 35,
+    competencyTags: ["Technical", "Data Viz"],
+    description: "Designing dashboards and charts that communicate statistical findings clearly to policymakers.",
+  },
+  {
+    name: "Change Management for Digital Transformation Projects",
+    targetCadre: ["ISS", "SSS"],
+    durationDays: 3,
+    venue: VENUES[2],
+    batchSize: 30,
+    competencyTags: ["Behavioural/Managerial", "Change Management"],
+    description: "Frameworks for leading organisational change during departmental digitalization initiatives.",
+  },
 ];
+
+export const NSSTA_PROGRAMMES = BASE_PROGRAMMES.map((p) => ({
+  ...p,
+  level: deriveLevel(p.name),
+  rating: hashRating(p.name),
+}));
 
 export async function seedNsstaProgrammes(prisma: PrismaClient) {
   for (const p of NSSTA_PROGRAMMES) {
