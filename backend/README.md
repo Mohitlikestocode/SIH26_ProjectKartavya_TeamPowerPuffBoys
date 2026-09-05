@@ -28,8 +28,8 @@ backend/
 
 ## Status
 
-Scaffold only, except the **Assessment module — Phase 1 (PDF → MCQ generation pipeline)** and **Phase 2 (admin review/edit/manual entry)**, which are implemented:
-`src/modules/documents/`, `src/modules/questions/`, and the pipeline logic under `src/lib/` (`ingestion/`, `chunking/`, `llm/`, `validation/`, `mcq/`). See below for how to run it. All other module folders remain stub `routes/controller/service` files; implementation follows the phased build order in `prompt.md`.
+Scaffold only, except the **Assessment module — Phase 1 (PDF → MCQ generation pipeline)**, **Phase 2 (admin review/edit/manual entry)**, and **Phase 3 (test assembly, delivery, attempts, scoring)**, which are implemented:
+`src/modules/documents/`, `src/modules/questions/`, `src/modules/assessments/`, `src/modules/attempts/`, `src/modules/violations/`, and the pipeline logic under `src/lib/` (`ingestion/`, `chunking/`, `llm/`, `validation/`, `mcq/`, `assessment/`). See below for how to run it. All other module folders remain stub `routes/controller/service` files; implementation follows the phased build order in `prompt.md`.
 
 ## Assessment module — Phase 1: PDF/PPTX/DOCX → MCQ pipeline
 
@@ -143,3 +143,72 @@ curl -X POST http://localhost:4000/api/questions/<id>/reject \
 ```
 
 **Known, accepted limitations carried forward from Phase 1** (not addressed in Phase 2): ~4.5% of generated questions may have a factually wrong answer key due to the model misreading a messy source passage (a grounding issue admin review is meant to catch, not something the pipeline self-corrects); negated/"EXCEPT"-stem questions are currently over-represented in generation output — a prompt-level tuning task, not in scope here.
+
+## Assessment module — Phase 3: test assembly, delivery, attempts, and scoring
+
+Scope: assemble a set of questions into an `Assessment` (a test template), let a learner start an `Attempt`, answer questions without seeing correct answers, submit, and get back a score with a per-domain/per-skill breakdown and full explanations. Covers all four test types from the project plan — diagnostic, practice, graded/final, self-generated — as one shared assembly/delivery/scoring engine with type-specific selection logic on top, not four parallel systems. No frontend/UI, no real user auth, no gamified practice UI, no recommendation engine (this phase only produces the per-domain/skill data shape a later recommendation phase would consume).
+
+**Question eligibility (deliberate, not final):** assembly draws from `status: draft` and `approved` questions, excluding `rejected`. This is a testing-stage choice made because the approved bank is still small — **not** the production rule. Tighten `ELIGIBLE_STATUSES` in `src/modules/assessments/assessments.service.ts` to `approved`-only once the approved bank is large enough.
+
+**User identity (placeholder):** same pattern as Phase 2's `x-admin-id` — every endpoint below requires an `x-user-id` header, any non-empty string, trusted as-is. Attempt/violation endpoints additionally check that the attempt's `userId` matches the caller's `x-user-id` (403 otherwise) — this is authorization-shaped, but it's still just string-matching against an unverified claim, not real auth. Replace once a real Auth/User module exists.
+
+**Assembly logic** (`src/lib/assessment/assembleQuestions.ts`): given criteria (`domain`, `skill`, `sourceDocumentId`, `questionCount`), pulls the eligible question pool and samples from it — `randomSample` for practice/graded/self-generated (the caller has already scoped what they want), `balancedDomainSample` for diagnostic tests, which round-robins across whichever distinct `domain` values are present in the eligible pool so one large domain doesn't dominate a diagnostic (best-effort, since `domain` is still a free-text stub rather than a real ontology).
+
+**Self-generated tests, implementation choice:** built as "filter the existing question bank by domain/skill" (same assembly path as the others), **not** live on-demand generation through Phase 1's LLM pipeline. This was flagged as the simpler of the two valid options rather than wired in silently — reusing the generation pipeline synchronously inside an HTTP request is a bigger, separate piece of work if it's wanted later.
+
+**Scoring engine** (`src/lib/assessment/scoreAttempt.ts`): compares each submitted answer's `selectedOptionIndex` against the question's already-derived `correctOption` (never re-derived here). An unanswered question counts as incorrect but still counts toward the total. Produces `score` (percent), `passed` (against `Assessment.passingThreshold`, `null` if ungraded), and a `breakdown: { domain, skill, correct, total }[]` — this exact shape is meant to be what a later recommendation-engine phase reads, though nothing in this phase acts on it.
+
+**Anti-cheat (graded/final only):** an assessment's `timeLimitMinutes` is enforced by re-checking the deadline at the top of every attempt-reading/mutating request — once it's passed, the attempt is auto-scored and moved to `expired` (exactly like an explicit submit, so an expired attempt still gets a real score, not a blank one) and further answer submissions are rejected. Violation tracking is a flat counter (`Attempt.violationCount`) plus a timestamped log (`AttemptViolationEvent`) — no auto-kick, no proctoring, deliberately basic per scope.
+
+**Endpoints:**
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `POST` | `/api/assessments` | `x-user-id` | Assemble a new assessment: `{ purpose, title, questionCount, domain?, skill?, sourceDocumentId?, timeLimitMinutes?, passingThreshold? }`. `purpose` is one of `diagnostic \| practice \| graded \| self_generated`. `graded` requires both `timeLimitMinutes` and `passingThreshold`. |
+| `GET` | `/api/assessments/:id` | — | Fetch an assessment's definition and its question list (options shown, answers/explanations redacted). |
+| `POST` | `/api/assessments/:id/attempts` | `x-user-id` | Start an attempt for the calling user. Returns an existing `in_progress` attempt for that user+assessment instead of creating a duplicate. |
+| `GET` | `/api/attempts/:id` | `x-user-id` | Fetch attempt state: questions + any answers already given. Correct answers/explanations are hidden while `in_progress`, revealed once `submitted`/`expired`/`kicked`. Also returns `timeRemainingSeconds` for timed attempts. |
+| `POST` | `/api/attempts/:id/answers` | `x-user-id` | Submit/overwrite an answer for one question: `{ questionId, selectedOptionIndex }`. Rejected once the attempt is no longer `in_progress` (submitted, expired, or past its time limit). |
+| `POST` | `/api/attempts/:id/submit` | `x-user-id` | Finalize the attempt: scores it, returns `{ score, passed, breakdown, questions }` with full explanations for every question. |
+| `POST` | `/api/violations` | `x-user-id` | Log a basic anti-cheat event: `{ attemptId, type }`, `type` one of `phone_detected \| multiple_faces \| no_face \| tab_switch \| fullscreen_exit` (mirrors `ViolationEventDTO` in `src/types/domains.ts`). Increments `Attempt.violationCount`. |
+
+**curl examples:**
+
+Assemble a graded test on one skill, then start an attempt:
+```bash
+curl -X POST http://localhost:4000/api/assessments \
+  -H "Content-Type: application/json" -H "x-user-id: course-engine" \
+  -d '{
+    "purpose": "graded",
+    "title": "Survey Methodology — Module Final",
+    "questionCount": 10,
+    "skill": "Survey Methodology",
+    "timeLimitMinutes": 20,
+    "passingThreshold": 70
+  }'
+# note the returned "id" as <assessmentId>
+
+curl -X POST http://localhost:4000/api/assessments/<assessmentId>/attempts \
+  -H "Content-Type: application/json" -H "x-user-id: learner-42"
+# note the returned "id" as <attemptId>
+```
+
+Submit an answer (correctness is not revealed in the response):
+```bash
+curl -X POST http://localhost:4000/api/attempts/<attemptId>/answers \
+  -H "Content-Type: application/json" -H "x-user-id: learner-42" \
+  -d '{ "questionId": "<questionId>", "selectedOptionIndex": 1 }'
+```
+
+Finalize the attempt and get the scored result with explanations:
+```bash
+curl -X POST http://localhost:4000/api/attempts/<attemptId>/submit \
+  -H "Content-Type: application/json" -H "x-user-id: learner-42"
+```
+
+View the same scored result again later (GET returns the same explanations once finalized):
+```bash
+curl http://localhost:4000/api/attempts/<attemptId> -H "x-user-id: learner-42"
+```
+
+**Not built in this phase (explicitly out of scope):** the recommendation engine that would consume the per-domain/skill `breakdown` output; a real competency-ontology relation for `domain`/`skill` (still free-text stubs); gamified practice-mode UI/leaderboards; real user authentication (placeholder `x-user-id` only, same caveat as Phase 2's `x-admin-id`).

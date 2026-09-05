@@ -82,7 +82,9 @@ model Question {
   status           QuestionStatus  @default(draft)
   createdAt        DateTime        @default(now())
 
-  editLogs QuestionEditLog[]
+  editLogs            QuestionEditLog[]
+  assessmentQuestions AssessmentQuestion[]
+  attemptAnswers      AttemptAnswer[]
 
   @@index([sourceDocumentId])
   @@index([chunkId])
@@ -115,4 +117,114 @@ model GenerationRejection {
   createdAt DateTime @default(now())
 
   @@index([chunkId])
+}
+
+// --- Assessment module / Phase 3: test assembly, delivery, attempts, scoring ---
+
+// Mirrors AssessmentType from src/types/domains.ts ("mcq" | "simulation" | "diagnostic") — kept
+// as a plain string rather than a Prisma enum since it's a cross-module type; everything Phase 3
+// builds sets this to "mcq". `purpose` (below) is what actually distinguishes the four Phase 3
+// test types, since AssessmentType's own "diagnostic" value doesn't have room for
+// practice/graded/self_generated alongside it.
+enum AssessmentPurpose {
+  diagnostic
+  practice
+  graded
+  self_generated
+}
+
+model Assessment {
+  id               String            @id @default(cuid())
+  type             String            @default("mcq")
+  purpose          AssessmentPurpose
+  title            String
+  // null = untimed (practice/self-generated/diagnostic); set for graded/final.
+  timeLimitMinutes Int?
+  // Percent required to pass; null = ungraded. Only "graded" purpose sets this in practice.
+  passingThreshold Int?
+  // Target question count at assembly time (the actual assembled count may be lower if the
+  // eligible question bank for the given criteria is smaller than requested).
+  questionCount    Int
+  // The assembly criteria used (domain/skill/scope/etc) — for traceability/debugging only, never
+  // re-parsed by application logic.
+  criteria         Json?
+  // Placeholder identity of whoever triggered assembly (see src/middleware/userIdentity.ts);
+  // null for system-assembled diagnostics with no specific initiating user.
+  createdBy        String?
+  createdAt        DateTime          @default(now())
+
+  assessmentQuestions AssessmentQuestion[]
+  attempts            Attempt[]
+}
+
+// Join table: the fixed set of questions selected for one Assessment, in delivery order.
+model AssessmentQuestion {
+  id           String     @id @default(cuid())
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId   String
+  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sequence     Int
+
+  @@unique([assessmentId, questionId])
+  @@unique([assessmentId, sequence])
+  @@index([questionId])
+}
+
+// Mirrors AttemptStatus from src/types/domains.ts.
+enum AttemptStatus {
+  in_progress
+  submitted
+  kicked
+  expired
+}
+
+model Attempt {
+  id             String        @id @default(cuid())
+  assessmentId   String
+  assessment     Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  // Placeholder identity string (see src/middleware/userIdentity.ts) — same pattern as Phase 2's
+  // editedBy until a real User model/auth exists.
+  userId         String
+  status         AttemptStatus @default(in_progress)
+  startedAt      DateTime      @default(now())
+  completedAt    DateTime?
+  // Percent correct, set at submission; null while in_progress.
+  score          Float?
+  // Only meaningful when assessment.passingThreshold is set; null otherwise.
+  passed         Boolean?
+  violationCount Int           @default(0)
+
+  answers         AttemptAnswer[]
+  violationEvents AttemptViolationEvent[]
+
+  @@index([assessmentId])
+  @@index([userId])
+}
+
+model AttemptAnswer {
+  id                  String   @id @default(cuid())
+  attemptId           String
+  attempt             Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId          String
+  question            Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionIndex Int
+  // Computed against the question's derived correctOption at submission time; null until then.
+  isCorrect           Boolean?
+  answeredAt          DateTime @default(now())
+
+  @@unique([attemptId, questionId])
+  @@index([questionId])
+}
+
+// Basic anti-cheat log for graded/final attempts only. `type` mirrors ViolationEventDTO.type from
+// src/types/domains.ts, stored as free text rather than forking a Prisma enum from it.
+model AttemptViolationEvent {
+  id         String   @id @default(cuid())
+  attemptId  String
+  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  type       String
+  occurredAt DateTime @default(now())
+
+  @@index([attemptId])
 }

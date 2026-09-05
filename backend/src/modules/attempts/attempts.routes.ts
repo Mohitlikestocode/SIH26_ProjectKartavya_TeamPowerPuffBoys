@@ -1,7 +1,9 @@
 import { Router } from "express";
 import * as controller from "./attempts.controller";
+import { requireUserIdentity } from "@/middleware/userIdentity";
 
-// Attempts routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const attemptsRouter = Router();
 
-// TODO: wire actual endpoints for the Attempts module.
+attemptsRouter.get("/:id", requireUserIdentity, controller.getById);
+attemptsRouter.post("/:id/answers", requireUserIdentity, controller.submitAnswer);
+attemptsRouter.post("/:id/submit", requireUserIdentity, controller.submit);
