@@ -12,11 +12,24 @@ export interface McqAnswer {
 // this assumption is isolated to this one scorer function. Adjust here (only)
 // once the real contract is known: expected per-question fields are
 // {id, domainTag, subSkillTag, correctIndex}.
-interface StubMcqQuestion {
+// `explanations` is optional and passed through opaquely (same reasoning as `questions` itself)
+// so the MCQ module's explanation shape isn't this module's concern to type — it's just echoed
+// back in each question's result once the attempt is submitted.
+export interface StubMcqQuestion {
   id: string;
   domainTag?: string;
   subSkillTag?: string;
   correctIndex?: number;
+  explanations?: unknown;
+}
+
+// One question's result, captured at scoring time instead of being discarded. `selectedIndex` is
+// null for a question the learner never answered.
+export interface McqQuestionResult {
+  questionId: string;
+  selectedIndex: number | null;
+  isCorrect: boolean;
+  explanations?: unknown;
 }
 
 export async function startAttempt(opts: {
@@ -44,6 +57,13 @@ export async function startAttempt(opts: {
   });
 }
 
+// Strips answer-revealing fields from a question while an attempt is still in_progress. Doesn't
+// change what's stored — only what this one read path hands back before submission.
+export function redactQuestionForDelivery(q: StubMcqQuestion) {
+  const { correctIndex: _correctIndex, explanations: _explanations, ...rest } = q;
+  return rest;
+}
+
 export async function getAttempt(attemptId: string, requestingUserId: string, requestingRole: string) {
   const attempt = await prisma.attempt.findUnique({
     where: { id: attemptId },
@@ -53,6 +73,19 @@ export async function getAttempt(attemptId: string, requestingUserId: string, re
   if (attempt.userId !== requestingUserId && requestingRole === "learner") {
     throw new ApiError(403, "Not your attempt");
   }
+
+  // results/passed are already null on an in_progress attempt (only ever written at submission),
+  // so the only thing that needs active redaction here is the embedded question bank's answer key.
+  if (attempt.status === "in_progress" && Array.isArray(attempt.assessment.questions)) {
+    return {
+      ...attempt,
+      assessment: {
+        ...attempt.assessment,
+        questions: (attempt.assessment.questions as unknown as StubMcqQuestion[]).map(redactQuestionForDelivery),
+      },
+    };
+  }
+
   return attempt;
 }
 
@@ -62,6 +95,7 @@ function scoreMcqLike(questions: unknown, answers: McqAnswer[]) {
 
   const domainTotals = new Map<string, { correct: number; total: number }>();
   const subSkillTotals = new Map<string, { correct: number; total: number }>();
+  const results: McqQuestionResult[] = [];
 
   let correctCount = 0;
   let scoredCount = 0;
@@ -69,8 +103,10 @@ function scoreMcqLike(questions: unknown, answers: McqAnswer[]) {
   for (const q of qs) {
     if (q.correctIndex === undefined) continue; // not scorable client-side (e.g. essay) — skip
     scoredCount += 1;
-    const isCorrect = answerByQuestion.get(q.id) === q.correctIndex;
+    const selectedIndex = answerByQuestion.get(q.id);
+    const isCorrect = selectedIndex === q.correctIndex;
     if (isCorrect) correctCount += 1;
+    results.push({ questionId: q.id, selectedIndex: selectedIndex ?? null, isCorrect, explanations: q.explanations });
 
     if (q.domainTag) {
       const d = domainTotals.get(q.domainTag) ?? { correct: 0, total: 0 };
@@ -95,7 +131,7 @@ function scoreMcqLike(questions: unknown, answers: McqAnswer[]) {
     Array.from(subSkillTotals.entries()).map(([k, v]) => [k, pct(v.correct, v.total)]),
   );
 
-  return { score: pct(correctCount, scoredCount), perDomainScore, perSubSkillScore };
+  return { score: pct(correctCount, scoredCount), perDomainScore, perSubSkillScore, results };
 }
 
 // Blends a fresh attempt score into the running UserCompetencyScore per
@@ -136,7 +172,12 @@ export async function submitAttempt(opts: {
   if (attempt.userId !== opts.requestingUserId) throw new ApiError(403, "Not your attempt");
   if (attempt.status !== "in_progress") throw new ApiError(409, `Attempt already ${attempt.status}`);
 
-  let result: { score: number; perDomainScore: Record<string, number>; perSubSkillScore: Record<string, number> };
+  let result: {
+    score: number;
+    perDomainScore: Record<string, number>;
+    perSubSkillScore: Record<string, number>;
+    results?: McqQuestionResult[];
+  };
 
   if (attempt.assessment.type === "mcq" || attempt.assessment.type === "diagnostic") {
     const answers = Array.isArray(opts.answers) ? (opts.answers as McqAnswer[]) : [];
@@ -155,6 +196,13 @@ export async function submitAttempt(opts: {
     throw new ApiError(400, "This assessment type requires an externally computed score");
   }
 
+  // Null (not applicable) rather than false when there's nothing meaningful to compare against —
+  // never silently mark an attempt failed just because a threshold wasn't evaluable.
+  const passed =
+    attempt.assessment.passingScore === null || attempt.assessment.passingScore === undefined
+      ? null
+      : result.score >= attempt.assessment.passingScore;
+
   const updated = await prisma.attempt.update({
     where: { id: opts.attemptId },
     data: {
@@ -162,6 +210,8 @@ export async function submitAttempt(opts: {
       score: result.score,
       perDomainScore: result.perDomainScore as never,
       perSubSkillScore: result.perSubSkillScore as never,
+      results: (result.results ?? null) as never,
+      passed,
       status: "submitted",
       submittedAt: new Date(),
     },
@@ -182,7 +232,12 @@ export async function forceKick(attemptId: string) {
   if (!attempt) throw new ApiError(404, "Attempt not found");
   if (attempt.status !== "in_progress") return attempt;
 
-  let result = { score: 0, perDomainScore: {}, perSubSkillScore: {} };
+  let result: {
+    score: number;
+    perDomainScore: Record<string, number>;
+    perSubSkillScore: Record<string, number>;
+    results?: McqQuestionResult[];
+  } = { score: 0, perDomainScore: {}, perSubSkillScore: {} };
   if (
     (attempt.assessment.type === "mcq" || attempt.assessment.type === "diagnostic") &&
     Array.isArray(attempt.answers)
@@ -190,12 +245,19 @@ export async function forceKick(attemptId: string) {
     result = scoreMcqLike(attempt.assessment.questions, attempt.answers as unknown as McqAnswer[]);
   }
 
+  const passed =
+    attempt.assessment.passingScore === null || attempt.assessment.passingScore === undefined
+      ? null
+      : result.score >= attempt.assessment.passingScore;
+
   const updated = await prisma.attempt.update({
     where: { id: attemptId },
     data: {
       score: result.score,
       perDomainScore: result.perDomainScore as never,
       perSubSkillScore: result.perSubSkillScore as never,
+      results: (result.results ?? null) as never,
+      passed,
       status: "kicked",
       submittedAt: new Date(),
     },

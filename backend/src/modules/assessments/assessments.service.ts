@@ -1,6 +1,20 @@
 import { prisma } from "../../config/db";
 import { ApiError } from "../../middleware/errorHandler";
-import type { AssessmentType } from "@prisma/client";
+import type { AssessmentType, Assessment } from "@prisma/client";
+import { redactQuestionForDelivery, type StubMcqQuestion } from "../attempts/attempts.service";
+
+// Every read path in this module is a pre-test view — a learner can reach these before ever
+// starting (or without ever starting) an attempt, so correctIndex/explanations must never appear
+// here regardless of assessment or attempt status. Only the attempts module's getAttempt(), after
+// submission, is allowed to reveal them (see attempts.service.ts's redactQuestionForDelivery,
+// reused here rather than duplicated).
+function redactAssessment<T extends Pick<Assessment, "questions">>(assessment: T): T {
+  if (!Array.isArray(assessment.questions)) return assessment;
+  return {
+    ...assessment,
+    questions: (assessment.questions as unknown as StubMcqQuestion[]).map(redactQuestionForDelivery) as never,
+  };
+}
 
 export interface CreateAssessmentInput {
   type: AssessmentType;
@@ -34,14 +48,15 @@ export async function createAssessment(createdById: string, input: CreateAssessm
 export async function getAssessment(id: string) {
   const assessment = await prisma.assessment.findUnique({ where: { id } });
   if (!assessment) throw new ApiError(404, "Assessment not found");
-  return assessment;
+  return redactAssessment(assessment);
 }
 
 export async function listAssessments(createdById?: string) {
-  return prisma.assessment.findMany({
+  const assessments = await prisma.assessment.findMany({
     where: createdById ? { createdById } : {},
     orderBy: { createdAt: "desc" },
   });
+  return assessments.map(redactAssessment);
 }
 
 const DIAGNOSTIC_TITLE = "Baseline Diagnostic";
@@ -55,7 +70,7 @@ export async function getOrCreateDiagnostic(systemUserId: string) {
   const existing = await prisma.assessment.findFirst({
     where: { title: DIAGNOSTIC_TITLE, type: "diagnostic" },
   });
-  if (existing) return existing;
+  if (existing) return redactAssessment(existing);
 
   const domains = await prisma.competencyDomain.findMany({ include: { subSkills: true } });
   const stubQuestions = domains.flatMap((domain, di) =>
@@ -70,7 +85,7 @@ export async function getOrCreateDiagnostic(systemUserId: string) {
     })),
   );
 
-  return prisma.assessment.create({
+  const created = await prisma.assessment.create({
     data: {
       type: "diagnostic",
       title: DIAGNOSTIC_TITLE,
@@ -82,4 +97,5 @@ export async function getOrCreateDiagnostic(systemUserId: string) {
       createdById: systemUserId,
     },
   });
+  return redactAssessment(created);
 }

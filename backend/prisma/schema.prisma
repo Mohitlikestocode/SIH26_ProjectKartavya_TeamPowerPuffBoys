@@ -259,6 +259,14 @@ model Attempt {
   score            Int?
   perDomainScore   Json? // Record<domain, number>
   perSubSkillScore Json? // Record<subSkill, number>
+  // Per-question results (mcq/diagnostic only — see scoreMcqLike()): [{ questionId,
+  // selectedIndex, isCorrect, explanations? }]. Null until submitted; opaque JSON for the same
+  // reason `questions`/`answers` are — the MCQ module's explanation shape isn't this module's
+  // concern to type.
+  results Json?
+  // score >= assessment.passingScore, computed at submission. Null = not applicable (no
+  // passingScore was evaluable), never a default false.
+  passed  Boolean?
 
   violations ViolationEvent[]
   status     AttemptStatus @default(in_progress)
