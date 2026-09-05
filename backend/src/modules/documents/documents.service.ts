@@ -39,16 +39,14 @@ export async function ingestDocument(file: UploadedFile) {
     const rawChunks = chunkText(extraction.pages);
 
     await prisma.$transaction([
-      ...rawChunks.map((chunk) =>
-        prisma.chunk.create({
-          data: {
-            documentId: document.id,
-            sequence: chunk.sequence,
-            heading: chunk.heading,
-            text: chunk.text,
-          },
-        })
-      ),
+      prisma.chunk.createMany({
+        data: rawChunks.map((chunk) => ({
+          documentId: document.id,
+          sequence: chunk.sequence,
+          heading: chunk.heading,
+          text: chunk.text,
+        })),
+      }),
       prisma.sourceDocument.update({
         where: { id: document.id },
         data: {
