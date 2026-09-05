@@ -1,9 +1,17 @@
 import { Router } from "express";
-import * as controller from "./attempts.controller";
-import { requireUserIdentity } from "@/middleware/userIdentity";
+import { startHandler, getHandler, submitHandler, listForSessionHandler } from "./attempts.controller";
+import { requireAuth } from "../../middleware/auth";
+import { requireRole } from "../../middleware/rbac";
 
 export const attemptsRouter = Router();
 
-attemptsRouter.get("/:id", requireUserIdentity, controller.getById);
-attemptsRouter.post("/:id/answers", requireUserIdentity, controller.submitAnswer);
-attemptsRouter.post("/:id/submit", requireUserIdentity, controller.submit);
+// Direct (non-session) attempt start — e.g. the diagnostic/onboarding test.
+attemptsRouter.post("/", requireAuth, startHandler);
+attemptsRouter.get("/:id", requireAuth, getHandler);
+attemptsRouter.post("/:id/submit", requireAuth, submitHandler);
+attemptsRouter.get(
+  "/session/:sessionId",
+  requireAuth,
+  requireRole("trainer", "org_admin"),
+  listForSessionHandler,
+);

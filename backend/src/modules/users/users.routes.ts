@@ -1,7 +1,8 @@
 import { Router } from "express";
-import * as controller from "./users.controller";
+import { listTargetRolesHandler, updateProfileHandler } from "./users.controller";
+import { requireAuth } from "../../middleware/auth";
 
-// Users routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const usersRouter = Router();
 
-// TODO: wire actual endpoints for the Users module.
+usersRouter.get("/target-roles", requireAuth, listTargetRolesHandler);
+usersRouter.patch("/me", requireAuth, updateProfileHandler);

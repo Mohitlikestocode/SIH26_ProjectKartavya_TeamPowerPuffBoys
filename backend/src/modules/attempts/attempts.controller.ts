@@ -1,42 +1,62 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as service from "./attempts.service";
-import { ApiError } from "@/middleware/errorHandler";
+import { ApiError } from "../../middleware/errorHandler";
 
-export async function getById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const state = await service.getAttemptState(req.params.id, req.userId!);
-    res.json(state);
-  } catch (err) {
-    next(err);
-  }
-}
-
-const submitAnswerSchema = z.object({
-  questionId: z.string().min(1),
-  selectedOptionIndex: z.number().int().min(0).max(3),
+const startSchema = z.object({
+  assessmentId: z.string(),
 });
 
-export async function submitAnswer(req: Request, res: Response, next: NextFunction) {
+const submitSchema = z.object({
+  answers: z.unknown(),
+  externalScore: z
+    .object({
+      score: z.number().min(0).max(100),
+      perDomainScore: z.record(z.number()).optional(),
+      perSubSkillScore: z.record(z.number()).optional(),
+    })
+    .optional(),
+});
+
+export async function startHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const parsed = submitAnswerSchema.safeParse(req.body);
-    if (!parsed.success) throw new ApiError(400, `Invalid request body: ${parsed.error.message}`);
-    const answer = await service.submitAnswer(
-      req.params.id,
-      parsed.data.questionId,
-      parsed.data.selectedOptionIndex,
-      req.userId!
-    );
-    res.status(201).json(answer);
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    const { assessmentId } = startSchema.parse(req.body);
+    res.status(201).json(await service.startAttempt({ assessmentId, userId: req.user.id }));
+  } catch (err) {
+    next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
+  }
+}
+
+export async function getHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    res.json(await service.getAttempt(req.params.id, req.user.id, req.user.role));
   } catch (err) {
     next(err);
   }
 }
 
-export async function submit(req: Request, res: Response, next: NextFunction) {
+export async function submitHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await service.submitAttempt(req.params.id, req.userId!);
-    res.json(result);
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    const input = submitSchema.parse(req.body);
+    res.json(
+      await service.submitAttempt({
+        attemptId: req.params.id,
+        requestingUserId: req.user.id,
+        answers: input.answers,
+        externalScore: input.externalScore,
+      }),
+    );
+  } catch (err) {
+    next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
+  }
+}
+
+export async function listForSessionHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await service.listAttemptsForSession(req.params.sessionId));
   } catch (err) {
     next(err);
   }

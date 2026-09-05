@@ -1,7 +1,8 @@
 import { Router } from "express";
-import * as controller from "./nssta.controller";
+import { searchHandler } from "./nssta.controller";
+import { requireAuth } from "../../middleware/auth";
 
-// NSSTA/TPAC routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const nsstaRouter = Router();
 
-// TODO: wire actual endpoints for the NSSTA/TPAC module.
+// GET /api/courses/nssta?tag=GIS&cadre=ISS
+nsstaRouter.get("/", requireAuth, searchHandler);

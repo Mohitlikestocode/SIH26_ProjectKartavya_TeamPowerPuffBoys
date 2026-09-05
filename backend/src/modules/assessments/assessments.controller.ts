@@ -1,58 +1,54 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as service from "./assessments.service";
-import { ApiError } from "@/middleware/errorHandler";
+import { ApiError } from "../../middleware/errorHandler";
+import { prisma } from "../../config/db";
 
-const assembleSchema = z.object({
-  purpose: z.enum(["diagnostic", "practice", "graded", "self_generated"]),
+const createAssessmentSchema = z.object({
+  type: z.enum(["mcq", "simulation", "diagnostic"]),
   title: z.string().min(1),
-  questionCount: z.number().int().min(1).max(200),
-  domain: z.string().min(1).optional(),
-  skill: z.string().min(1).optional(),
-  sourceDocumentId: z.string().min(1).optional(),
-  timeLimitMinutes: z.number().int().min(1).optional(),
-  passingThreshold: z.number().int().min(0).max(100).optional(),
+  domainTags: z.array(z.string()).default([]),
+  subSkillTags: z.array(z.string()).default([]),
+  questions: z.unknown().optional(),
+  scenario: z.unknown().optional(),
+  timeLimitSeconds: z.number().int().positive(),
+  passingScore: z.number().int().min(0).max(100),
+  isProctored: z.boolean().default(false),
 });
 
-export async function assemble(req: Request, res: Response, next: NextFunction) {
+export async function createHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const parsed = assembleSchema.safeParse(req.body);
-    if (!parsed.success) throw new ApiError(400, `Invalid request body: ${parsed.error.message}`);
-    const assessment = await service.assembleAssessment({ ...parsed.data, createdBy: req.userId });
-    res.status(201).json(assessment);
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    const input = createAssessmentSchema.parse(req.body);
+    res.status(201).json(await service.createAssessment(req.user.id, input));
+  } catch (err) {
+    next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
+  }
+}
+
+export async function getHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await service.getAssessment(req.params.id));
   } catch (err) {
     next(err);
   }
 }
 
-export async function getById(req: Request, res: Response, next: NextFunction) {
+export async function listHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const assessment = await service.getAssessment(req.params.id);
-    // Redact answer-revealing fields — this is the test definition, not a scored result.
-    const sanitized = {
-      ...assessment,
-      assessmentQuestions: assessment.assessmentQuestions.map((aq) => ({
-        sequence: aq.sequence,
-        question: {
-          id: aq.question.id,
-          question: aq.question.question,
-          options: aq.question.options,
-          isNegatedStem: aq.question.isNegatedStem,
-          domain: aq.question.domain,
-          skill: aq.question.skill,
-        },
-      })),
-    };
-    res.json(sanitized);
+    const mine = req.query.mine === "true";
+    res.json(await service.listAssessments(mine ? req.user?.id : undefined));
   } catch (err) {
     next(err);
   }
 }
 
-export async function startAttempt(req: Request, res: Response, next: NextFunction) {
+export async function diagnosticHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const attempt = await service.startAttempt(req.params.id, req.userId!);
-    res.status(201).json(attempt);
+    // System-owned content — attributed to any org_admin account.
+    const systemUser = await prisma.user.findFirst({ where: { role: "org_admin" } });
+    if (!systemUser) throw new ApiError(500, "No org_admin account available to own system content");
+    res.json(await service.getOrCreateDiagnostic(systemUser.id));
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,17 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import * as service from "./nssta.service";
 
-// NSSTA/TPAC controllers — thin HTTP layer over nssta.service.ts.
-// TODO: implement handlers as each phase lands.
+export async function searchHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tags = typeof req.query.tag === "string" ? [req.query.tag] : (req.query.tag as string[] | undefined);
+    const result = await service.searchProgrammes({
+      tags,
+      cadre: typeof req.query.cadre === "string" ? req.query.cadre : undefined,
+      page: req.query.page ? Number(req.query.page) : undefined,
+      size: req.query.size ? Number(req.query.size) : undefined,
+    });
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}

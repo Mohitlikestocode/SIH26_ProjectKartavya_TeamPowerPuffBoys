@@ -1,20 +1,34 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import * as service from "./violations.service";
-import { ApiError } from "@/middleware/errorHandler";
+import { ApiError } from "../../middleware/errorHandler";
 
-// Mirrors ViolationEventDTO.type from src/types/domains.ts.
+const violationTypes = [
+  "phone_detected",
+  "multiple_faces",
+  "no_face",
+  "tab_switch",
+  "fullscreen_exit",
+] as const;
+
 const logSchema = z.object({
-  attemptId: z.string().min(1),
-  type: z.enum(["phone_detected", "multiple_faces", "no_face", "tab_switch", "fullscreen_exit"]),
+  attemptId: z.string(),
+  type: z.enum(violationTypes),
 });
 
-export async function log(req: Request, res: Response, next: NextFunction) {
+export async function logHandler(req: Request, res: Response, next: NextFunction) {
   try {
-    const parsed = logSchema.safeParse(req.body);
-    if (!parsed.success) throw new ApiError(400, `Invalid request body: ${parsed.error.message}`);
-    const attempt = await service.logViolation(parsed.data.attemptId, parsed.data.type, req.userId!);
-    res.status(201).json(attempt);
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    const input = logSchema.parse(req.body);
+    res.status(201).json(await service.logViolation({ ...input, requestingUserId: req.user.id }));
+  } catch (err) {
+    next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
+  }
+}
+
+export async function timelineHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await service.getTimeline(req.params.attemptId));
   } catch (err) {
     next(err);
   }

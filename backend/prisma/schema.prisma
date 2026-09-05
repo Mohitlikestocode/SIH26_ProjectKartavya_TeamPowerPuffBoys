@@ -1,7 +1,5 @@
-// Kartavya (SIH26101) backend — Prisma schema.
-// Models land in Phase 1 (see prompt.md build order): User, Role, CompetencyDomain,
-// SubSkill, RoleCompetencyRequirement, UserCompetencyScore, Assessment, Attempt,
-// ViolationEvent, Session, Course, TrainingProgramme.
+// Kartavya (SIH26101) backend — Prisma schema. See ../../prompt.md for the
+// shared Assessment/Attempt contract and phased build order.
 
 generator client {
   provider = "prisma-client-js"
@@ -12,7 +10,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// --- Assessment module / Phase 1: PDF -> MCQ generation pipeline ---
+// ---------------------------------------------------------------------------
+// Assessment content ingestion / question bank
+// ---------------------------------------------------------------------------
 
 enum DocumentStatus {
   pending
@@ -34,7 +34,6 @@ model SourceDocument {
   storagePath      String
   status           DocumentStatus @default(pending)
   pageCount        Int?
-  // Pages/slides that had no extractable text and were routed through OCR fallback.
   ocrFlaggedPages  Int[]          @default([])
   failureReason    String?
   createdAt        DateTime       @default(now())
@@ -45,13 +44,13 @@ model SourceDocument {
 }
 
 model Chunk {
-  id         String   @id @default(cuid())
+  id         String         @id @default(cuid())
   documentId String
   document   SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
   sequence   Int
   heading    String?
   text       String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime       @default(now())
 
   questions Question[]
 
@@ -60,7 +59,6 @@ model Chunk {
 
 model Question {
   id               String          @id @default(cuid())
-  // Nullable: manually-created questions (Phase 2) have no source chunk.
   sourceDocumentId String?
   sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
   chunkId          String?
@@ -70,21 +68,13 @@ model Question {
   options          String[]
   isNegatedStem    Boolean         @default(false)
   correctOption    Int
-  // OptionExplanation[4], index-aligned to `options`:
-  // [{ optionIndex, isTrueStatement, isCorrect, text }, ...].
-  // isCorrect/correctOption are derived in code (see src/lib/mcq/deriveCorrectOption.ts) from
-  // isTrueStatement + isNegatedStem — never trusted directly from the model or an admin edit.
-  // Rows created before this field existed on the wire don't have isTrueStatement populated.
   explanations     Json
-  // Stub fields — populated by a later competency-ontology module.
   domain           String          @default("TBD")
   skill            String          @default("TBD")
   status           QuestionStatus  @default(draft)
   createdAt        DateTime        @default(now())
 
-  editLogs            QuestionEditLog[]
-  assessmentQuestions AssessmentQuestion[]
-  attemptAnswers      AttemptAnswer[]
+  editLogs QuestionEditLog[]
 
   @@index([sourceDocumentId])
   @@index([chunkId])
@@ -92,9 +82,6 @@ model Question {
   @@index([isNegatedStem])
 }
 
-// Audit trail for admin edits to a question (AI-generated or manual) — who changed what, when.
-// `editedBy` is a placeholder identity string (see src/middleware/adminIdentity.ts) until a real
-// auth/user model exists; it should become a foreign key to that model once Auth is built.
 model QuestionEditLog {
   id           String   @id @default(cuid())
   questionId   String
@@ -108,7 +95,6 @@ model QuestionEditLog {
   @@index([questionId])
 }
 
-// Audit trail for generations rejected by the validation layer — never silently discarded.
 model GenerationRejection {
   id        String   @id @default(cuid())
   chunkId   String
@@ -119,59 +105,140 @@ model GenerationRejection {
   @@index([chunkId])
 }
 
-// --- Assessment module / Phase 3: test assembly, delivery, attempts, scoring ---
+// ---------------------------------------------------------------------------
+// Auth / users
+// ---------------------------------------------------------------------------
 
-// Mirrors AssessmentType from src/types/domains.ts ("mcq" | "simulation" | "diagnostic") — kept
-// as a plain string rather than a Prisma enum since it's a cross-module type; everything Phase 3
-// builds sets this to "mcq". `purpose` (below) is what actually distinguishes the four Phase 3
-// test types, since AssessmentType's own "diagnostic" value doesn't have room for
-// practice/graded/self_generated alongside it.
-enum AssessmentPurpose {
+enum RoleName {
+  learner
+  trainer
+  org_admin
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         RoleName @default(learner)
+
+  designation     String?
+  department      String?
+  cadre           String? // ISS / SSS / State DES / MoSPI-NSO
+  state           String?
+  experienceYears Int?
+
+  targetRoleId String?
+  targetRole   TargetRole? @relation(fields: [targetRoleId], references: [id])
+
+  competencyScores   UserCompetencyScore[]
+  attempts           Attempt[]
+  createdAssessments Assessment[]          @relation("AssessmentCreatedBy")
+  createdSessions    Session[]             @relation("SessionCreatedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Competency ontology
+// ---------------------------------------------------------------------------
+
+model CompetencyDomain {
+  id   String @id @default(cuid())
+  name String @unique // Statistical | Technical | Digital Governance | Behavioural/Managerial
+
+  subSkills SubSkill[]
+
+  createdAt DateTime @default(now())
+}
+
+model SubSkill {
+  id       String           @id @default(cuid())
+  name     String
+  domainId String
+  domain   CompetencyDomain @relation(fields: [domainId], references: [id])
+
+  requirements RoleCompetencyRequirement[]
+  scores       UserCompetencyScore[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([domainId, name])
+}
+
+model TargetRole {
+  id          String @id @default(cuid())
+  title       String @unique
+  description String?
+  cadre       String? // typical cadre this role suits (ISS/SSS/DES/...)
+
+  requirements RoleCompetencyRequirement[]
+  users        User[]
+
+  createdAt DateTime @default(now())
+}
+
+model RoleCompetencyRequirement {
+  id            String     @id @default(cuid())
+  targetRoleId  String
+  targetRole    TargetRole @relation(fields: [targetRoleId], references: [id])
+  subSkillId    String
+  subSkill      SubSkill   @relation(fields: [subSkillId], references: [id])
+  requiredLevel Int // 0-100
+
+  @@unique([targetRoleId, subSkillId])
+}
+
+model UserCompetencyScore {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  subSkillId String
+  subSkill   SubSkill @relation(fields: [subSkillId], references: [id])
+  level      Int // 0-100
+  source     String   @default("seed") // seed | attempt | manual
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, subSkillId])
+}
+
+// ---------------------------------------------------------------------------
+// Assessments / Attempts
+// ---------------------------------------------------------------------------
+
+enum AssessmentType {
+  mcq
+  simulation
   diagnostic
-  practice
-  graded
-  self_generated
 }
 
 model Assessment {
-  id               String            @id @default(cuid())
-  type             String            @default("mcq")
-  purpose          AssessmentPurpose
-  title            String
-  // null = untimed (practice/self-generated/diagnostic); set for graded/final.
-  timeLimitMinutes Int?
-  // Percent required to pass; null = ungraded. Only "graded" purpose sets this in practice.
-  passingThreshold Int?
-  // Target question count at assembly time (the actual assembled count may be lower if the
-  // eligible question bank for the given criteria is smaller than requested).
-  questionCount    Int
-  // The assembly criteria used (domain/skill/scope/etc) — for traceability/debugging only, never
-  // re-parsed by application logic.
-  criteria         Json?
-  // Placeholder identity of whoever triggered assembly (see src/middleware/userIdentity.ts);
-  // null for system-assembled diagnostics with no specific initiating user.
-  createdBy        String?
-  createdAt        DateTime          @default(now())
+  id           String         @id @default(cuid())
+  type         AssessmentType
+  title        String
+  domainTags   String[] // subset of the 4 domain names
+  subSkillTags String[] // sub-skill names, e.g. "Sampling Methodology"
 
-  assessmentQuestions AssessmentQuestion[]
-  attempts            Attempt[]
+  createdById String
+  createdBy   User @relation("AssessmentCreatedBy", fields: [createdById], references: [id])
+
+  questions Json?
+  scenario  Json?
+
+  timeLimitSeconds Int
+  passingScore     Int
+
+  isProctored Boolean @default(false)
+
+  sessions Session[]
+  attempts Attempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// Join table: the fixed set of questions selected for one Assessment, in delivery order.
-model AssessmentQuestion {
-  id           String     @id @default(cuid())
-  assessmentId String
-  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  questionId   String
-  question     Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  sequence     Int
-
-  @@unique([assessmentId, questionId])
-  @@unique([assessmentId, sequence])
-  @@index([questionId])
-}
-
-// Mirrors AttemptStatus from src/types/domains.ts.
 enum AttemptStatus {
   in_progress
   submitted
@@ -180,51 +247,93 @@ enum AttemptStatus {
 }
 
 model Attempt {
-  id             String        @id @default(cuid())
-  assessmentId   String
-  assessment     Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  // Placeholder identity string (see src/middleware/userIdentity.ts) — same pattern as Phase 2's
-  // editedBy until a real User model/auth exists.
-  userId         String
-  status         AttemptStatus @default(in_progress)
-  startedAt      DateTime      @default(now())
-  completedAt    DateTime?
-  // Percent correct, set at submission; null while in_progress.
-  score          Float?
-  // Only meaningful when assessment.passingThreshold is set; null otherwise.
-  passed         Boolean?
-  violationCount Int           @default(0)
+  id           String        @id @default(cuid())
+  assessmentId String
+  assessment   Assessment    @relation(fields: [assessmentId], references: [id])
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  sessionId    String?
+  session      Session?      @relation(fields: [sessionId], references: [id])
 
-  answers         AttemptAnswer[]
-  violationEvents AttemptViolationEvent[]
+  answers          Json? // mcq answers OR simulation decision path
+  score            Int?
+  perDomainScore   Json? // Record<domain, number>
+  perSubSkillScore Json? // Record<subSkill, number>
 
-  @@index([assessmentId])
-  @@index([userId])
+  violations ViolationEvent[]
+  status     AttemptStatus @default(in_progress)
+
+  startedAt   DateTime @default(now())
+  submittedAt DateTime?
 }
 
-model AttemptAnswer {
-  id                  String   @id @default(cuid())
-  attemptId           String
-  attempt             Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  questionId          String
-  question            Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  selectedOptionIndex Int
-  // Computed against the question's derived correctOption at submission time; null until then.
-  isCorrect           Boolean?
-  answeredAt          DateTime @default(now())
-
-  @@unique([attemptId, questionId])
-  @@index([questionId])
+enum ViolationType {
+  phone_detected
+  multiple_faces
+  no_face
+  tab_switch
+  fullscreen_exit
 }
 
-// Basic anti-cheat log for graded/final attempts only. `type` mirrors ViolationEventDTO.type from
-// src/types/domains.ts, stored as free text rather than forking a Prisma enum from it.
-model AttemptViolationEvent {
-  id         String   @id @default(cuid())
-  attemptId  String
-  attempt    Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  type       String
-  occurredAt DateTime @default(now())
+model ViolationEvent {
+  id        String        @id @default(cuid())
+  attemptId String
+  attempt   Attempt       @relation(fields: [attemptId], references: [id])
+  type      ViolationType
+  timestamp DateTime      @default(now())
+}
 
-  @@index([attemptId])
+// ---------------------------------------------------------------------------
+// Sessions (QR join flow)
+// ---------------------------------------------------------------------------
+
+model Session {
+  id           String     @id @default(cuid())
+  name         String
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  createdById String
+  createdBy   User @relation("SessionCreatedBy", fields: [createdById], references: [id])
+
+  targetAudience String? // free text: cadre / department scope
+  joinToken      String @unique
+  expiresAt      DateTime
+
+  attempts Attempt[]
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Training catalogues (iGOT mock + NSSTA/TPAC)
+// ---------------------------------------------------------------------------
+
+model Course {
+  id             String   @id @default(cuid())
+  doId           String   @unique // do_-style ID, modeled on Sunbird composite/v3/search
+  title          String
+  provider       String   @default("iGOT Karmayogi")
+  durationHours  Int?
+  competencyTags String[]
+  description    String?
+  level          String? // Beginner | Intermediate | Advanced | Expert
+  rating         Float? // 0-5, deterministic mock (not real user feedback)
+
+  createdAt DateTime @default(now())
+}
+
+model TrainingProgramme {
+  id             String   @id @default(cuid())
+  name           String
+  targetCadre    String[] // ISS / SSS / State DES / ...
+  durationDays   Int?
+  venue          String?
+  batchSize      Int?
+  competencyTags String[]
+  description    String?
+  level          String? // Beginner | Intermediate | Advanced
+  rating         Float? // 0-5, deterministic mock (not real user feedback)
+
+  createdAt DateTime @default(now())
 }

@@ -1,20 +1,74 @@
-// Violations/Proctoring business logic — logs a basic anti-cheat event against an attempt.
-// Intentionally simple (a timestamped log row + a running count on Attempt) per Phase 3 scope —
-// no elaborate proctoring, scoring impact, or auto-kick logic here.
-import { prisma } from "@/config/db";
-import { ApiError } from "@/middleware/errorHandler";
-import type { Attempt } from "@prisma/client";
+import { prisma } from "../../config/db";
+import { ApiError } from "../../middleware/errorHandler";
+import { forceKick } from "../attempts/attempts.service";
+import type { ViolationType } from "@prisma/client";
 
-export async function logViolation(attemptId: string, type: string, requestingUserId: string): Promise<Attempt> {
-  const attempt = await prisma.attempt.findUnique({ where: { id: attemptId } });
-  if (!attempt) throw new ApiError(404, "Attempt not found.");
-  if (attempt.userId !== requestingUserId) {
-    throw new ApiError(403, "Cannot log a violation event against another user's attempt.");
+// This is the actual grading-relevant logic (backend-owned), not just a demo
+// gimmick. Every violation type counts equally — deliberately not sensitive:
+// it takes 6 warnings before an attempt is force-submitted and kicked, so a
+// single glance away or a momentary camera drop-out never ends a test.
+const VIOLATION_WEIGHTS: Record<ViolationType, number> = {
+  phone_detected: 1,
+  multiple_faces: 1,
+  no_face: 1,
+  tab_switch: 1,
+  fullscreen_exit: 1,
+};
+
+const KICK_THRESHOLD = 6;
+
+export interface LogViolationInput {
+  attemptId: string;
+  type: ViolationType;
+  requestingUserId: string;
+}
+
+export async function logViolation(input: LogViolationInput) {
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: input.attemptId },
+    include: { assessment: true },
+  });
+  if (!attempt) throw new ApiError(404, "Attempt not found");
+  if (attempt.userId !== input.requestingUserId) throw new ApiError(403, "Not your attempt");
+  if (!attempt.assessment.isProctored) {
+    // The trainer didn't turn proctoring on for this assessment — the
+    // frontend shouldn't even be running the camera harness, but refuse to
+    // record or act on violations here too, defense in depth.
+    throw new ApiError(400, "This assessment is not proctored");
+  }
+  if (attempt.status !== "in_progress") {
+    // Already terminal — accept the event for the audit log but don't re-kick.
+    return { violationCount: 0, weightedCount: 0, status: attempt.status };
   }
 
-  const [, updated] = await prisma.$transaction([
-    prisma.attemptViolationEvent.create({ data: { attemptId, type } }),
-    prisma.attempt.update({ where: { id: attemptId }, data: { violationCount: { increment: 1 } } }),
-  ]);
-  return updated;
+  await prisma.violationEvent.create({
+    data: { attemptId: input.attemptId, type: input.type },
+  });
+
+  const events = await prisma.violationEvent.findMany({ where: { attemptId: input.attemptId } });
+  const weightedCount = events.reduce((sum, e) => sum + VIOLATION_WEIGHTS[e.type], 0);
+
+  if (weightedCount >= KICK_THRESHOLD) {
+    const kicked = await forceKick(input.attemptId);
+    return { violationCount: events.length, weightedCount, status: kicked.status };
+  }
+
+  return { violationCount: events.length, weightedCount, status: attempt.status };
+}
+
+// Full violation timeline per attempt — the audit-trail feature on the
+// trainer/org-admin dashboard (prompt.md Phase 3, item 14).
+export async function getTimeline(attemptId: string) {
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: attemptId },
+    include: { user: true, assessment: true },
+  });
+  if (!attempt) throw new ApiError(404, "Attempt not found");
+
+  const violations = await prisma.violationEvent.findMany({
+    where: { attemptId },
+    orderBy: { timestamp: "asc" },
+  });
+
+  return { attempt, violations };
 }

@@ -1,188 +1,215 @@
-// Attempts business logic — delivery (fetching in-progress state without revealing answers),
-// answer submission, time-limit enforcement, and final scoring.
-import { prisma } from "@/config/db";
-import { ApiError } from "@/middleware/errorHandler";
-import { scoreAttempt } from "@/lib/assessment/scoreAttempt";
+import { prisma } from "../../config/db";
+import { ApiError } from "../../middleware/errorHandler";
+import { scoreSimulationPath, type ScenarioGraph, type ScenarioPathStep } from "../simulations/simulations.service";
 
-async function loadAttemptWithAssessment(id: string, requestingUserId: string) {
-  const attempt = await prisma.attempt.findUnique({
-    where: { id },
-    include: {
-      assessment: { include: { assessmentQuestions: { orderBy: { sequence: "asc" }, include: { question: true } } } },
-      answers: true,
+export interface McqAnswer {
+  questionId: string;
+  selectedIndex: number;
+}
+
+// Shape assumed for MCQ questions until the teammate's question-bank module
+// lands — Assessment.questions is stored as loosely-typed JSON precisely so
+// this assumption is isolated to this one scorer function. Adjust here (only)
+// once the real contract is known: expected per-question fields are
+// {id, domainTag, subSkillTag, correctIndex}.
+interface StubMcqQuestion {
+  id: string;
+  domainTag?: string;
+  subSkillTag?: string;
+  correctIndex?: number;
+}
+
+export async function startAttempt(opts: {
+  assessmentId: string;
+  userId: string;
+  sessionId?: string | null;
+}) {
+  const existing = await prisma.attempt.findFirst({
+    where: {
+      assessmentId: opts.assessmentId,
+      userId: opts.userId,
+      sessionId: opts.sessionId ?? null,
+      status: "in_progress",
     },
   });
-  if (!attempt) throw new ApiError(404, "Attempt not found.");
-  if (attempt.userId !== requestingUserId) {
-    throw new ApiError(403, "This attempt does not belong to you.");
+  if (existing) return existing;
+
+  return prisma.attempt.create({
+    data: {
+      assessmentId: opts.assessmentId,
+      userId: opts.userId,
+      sessionId: opts.sessionId ?? null,
+      status: "in_progress",
+    },
+  });
+}
+
+export async function getAttempt(attemptId: string, requestingUserId: string, requestingRole: string) {
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: attemptId },
+    include: { assessment: true, violations: true },
+  });
+  if (!attempt) throw new ApiError(404, "Attempt not found");
+  if (attempt.userId !== requestingUserId && requestingRole === "learner") {
+    throw new ApiError(403, "Not your attempt");
   }
   return attempt;
 }
 
-type AttemptWithAssessment = Awaited<ReturnType<typeof loadAttemptWithAssessment>>;
+function scoreMcqLike(questions: unknown, answers: McqAnswer[]) {
+  const qs = Array.isArray(questions) ? (questions as StubMcqQuestion[]) : [];
+  const answerByQuestion = new Map(answers.map((a) => [a.questionId, a.selectedIndex]));
 
-function sanitizeQuestionForDelivery(question: AttemptWithAssessment["assessment"]["assessmentQuestions"][number]["question"], selectedOptionIndex?: number) {
-  return {
-    id: question.id,
-    question: question.question,
-    options: question.options,
-    isNegatedStem: question.isNegatedStem,
-    domain: question.domain,
-    skill: question.skill,
-    selectedOptionIndex: selectedOptionIndex ?? null,
-  };
-}
+  const domainTotals = new Map<string, { correct: number; total: number }>();
+  const subSkillTotals = new Map<string, { correct: number; total: number }>();
 
-function revealQuestionWithExplanations(
-  question: AttemptWithAssessment["assessment"]["assessmentQuestions"][number]["question"],
-  selectedOptionIndex: number | undefined,
-  isCorrect: boolean
-) {
-  return {
-    id: question.id,
-    question: question.question,
-    options: question.options,
-    isNegatedStem: question.isNegatedStem,
-    domain: question.domain,
-    skill: question.skill,
-    correctOption: question.correctOption,
-    selectedOptionIndex: selectedOptionIndex ?? null,
-    isCorrect,
-    explanations: question.explanations,
-  };
-}
+  let correctCount = 0;
+  let scoredCount = 0;
 
-// Scores an in_progress attempt and writes the final state — shared by an explicit /submit call
-// and by auto-expiry, so a time-limit cutoff produces exactly the same scored/explained result a
-// manual submit would, rather than leaving the learner with a "finalized" attempt that has no score.
-async function finalizeAttempt(attempt: AttemptWithAssessment, finalStatus: "submitted" | "expired") {
-  const questions = attempt.assessment.assessmentQuestions.map((aq) => aq.question);
-  const answersByQuestionId = new Map(attempt.answers.map((a) => [a.questionId, a.selectedOptionIndex]));
-  const { score, passed, scoredAnswers, breakdown } = scoreAttempt(
-    questions,
-    answersByQuestionId,
-    attempt.assessment.passingThreshold
-  );
+  for (const q of qs) {
+    if (q.correctIndex === undefined) continue; // not scorable client-side (e.g. essay) — skip
+    scoredCount += 1;
+    const isCorrect = answerByQuestion.get(q.id) === q.correctIndex;
+    if (isCorrect) correctCount += 1;
 
-  await prisma.$transaction([
-    prisma.attempt.update({
-      where: { id: attempt.id },
-      data: { status: finalStatus, completedAt: new Date(), score, passed },
-    }),
-    ...scoredAnswers.map((sa) =>
-      prisma.attemptAnswer.updateMany({
-        where: { attemptId: attempt.id, questionId: sa.questionId },
-        data: { isCorrect: sa.isCorrect },
-      })
-    ),
-  ]);
-
-  const isCorrectByQuestionId = new Map(scoredAnswers.map((sa) => [sa.questionId, sa.isCorrect]));
-  const revealedQuestions = questions.map((q) =>
-    revealQuestionWithExplanations(q, answersByQuestionId.get(q.id), isCorrectByQuestionId.get(q.id) ?? false)
-  );
-
-  return {
-    id: attempt.id,
-    assessmentId: attempt.assessmentId,
-    status: finalStatus,
-    score,
-    passed,
-    breakdown,
-    questions: revealedQuestions,
-  };
-}
-
-// Time-limit enforcement (graded/final only — assessments without a timeLimitMinutes are never
-// auto-expired). Called at the top of every attempt-mutating/reading endpoint so status is never
-// stale by more than one request. When time is up, the attempt is scored exactly like an explicit
-// submit (see finalizeAttempt) rather than just flipping status with no score.
-async function expireIfTimeUp(attempt: AttemptWithAssessment, requestingUserId: string): Promise<AttemptWithAssessment> {
-  if (attempt.status !== "in_progress" || attempt.assessment.timeLimitMinutes === null) return attempt;
-
-  const deadline = new Date(attempt.startedAt.getTime() + attempt.assessment.timeLimitMinutes * 60_000);
-  if (new Date() <= deadline) return attempt;
-
-  await finalizeAttempt(attempt, "expired");
-  return loadAttemptWithAssessment(attempt.id, requestingUserId);
-}
-
-export async function getAttemptState(id: string, requestingUserId: string) {
-  const attempt = await expireIfTimeUp(await loadAttemptWithAssessment(id, requestingUserId), requestingUserId);
-  const answersByQuestionId = new Map(attempt.answers.map((a) => [a.questionId, a.selectedOptionIndex]));
-
-  const isFinalized = attempt.status !== "in_progress";
-  const questions = attempt.assessment.assessmentQuestions.map((aq) => {
-    const selectedOptionIndex = answersByQuestionId.get(aq.questionId);
-    if (isFinalized) {
-      const answer = attempt.answers.find((a) => a.questionId === aq.questionId);
-      return revealQuestionWithExplanations(aq.question, selectedOptionIndex, answer?.isCorrect ?? false);
+    if (q.domainTag) {
+      const d = domainTotals.get(q.domainTag) ?? { correct: 0, total: 0 };
+      d.total += 1;
+      if (isCorrect) d.correct += 1;
+      domainTotals.set(q.domainTag, d);
     }
-    return sanitizeQuestionForDelivery(aq.question, selectedOptionIndex);
+    if (q.subSkillTag) {
+      const s = subSkillTotals.get(q.subSkillTag) ?? { correct: 0, total: 0 };
+      s.total += 1;
+      if (isCorrect) s.correct += 1;
+      subSkillTotals.set(q.subSkillTag, s);
+    }
+  }
+
+  const pct = (c: number, t: number) => (t > 0 ? Math.round((c / t) * 100) : 0);
+
+  const perDomainScore = Object.fromEntries(
+    Array.from(domainTotals.entries()).map(([k, v]) => [k, pct(v.correct, v.total)]),
+  );
+  const perSubSkillScore = Object.fromEntries(
+    Array.from(subSkillTotals.entries()).map(([k, v]) => [k, pct(v.correct, v.total)]),
+  );
+
+  return { score: pct(correctCount, scoredCount), perDomainScore, perSubSkillScore };
+}
+
+// Blends a fresh attempt score into the running UserCompetencyScore per
+// sub-skill (simple 50/50 blend with any existing level) so the competency
+// engine's gap map reflects real performance, not just seed data.
+async function feedCompetencyScores(userId: string, perSubSkillScore: Record<string, number>) {
+  for (const [subSkillName, newLevel] of Object.entries(perSubSkillScore)) {
+    const subSkill = await prisma.subSkill.findFirst({ where: { name: subSkillName } });
+    if (!subSkill) continue;
+
+    const existing = await prisma.userCompetencyScore.findUnique({
+      where: { userId_subSkillId: { userId, subSkillId: subSkill.id } },
+    });
+    const blended = existing ? Math.round((existing.level + newLevel) / 2) : newLevel;
+
+    await prisma.userCompetencyScore.upsert({
+      where: { userId_subSkillId: { userId, subSkillId: subSkill.id } },
+      update: { level: blended, source: "attempt" },
+      create: { userId, subSkillId: subSkill.id, level: blended, source: "attempt" },
+    });
+  }
+}
+
+export async function submitAttempt(opts: {
+  attemptId: string;
+  requestingUserId: string;
+  answers: unknown;
+  // Fallback for any assessment type this backend still can't score itself.
+  // mcq/diagnostic (scoreMcqLike) and simulation (scoreSimulationPath) both
+  // score themselves — nothing currently falls through to this.
+  externalScore?: { score: number; perDomainScore?: Record<string, number>; perSubSkillScore?: Record<string, number> };
+}) {
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: opts.attemptId },
+    include: { assessment: true },
   });
+  if (!attempt) throw new ApiError(404, "Attempt not found");
+  if (attempt.userId !== opts.requestingUserId) throw new ApiError(403, "Not your attempt");
+  if (attempt.status !== "in_progress") throw new ApiError(409, `Attempt already ${attempt.status}`);
 
-  const timeRemainingSeconds =
-    attempt.status === "in_progress" && attempt.assessment.timeLimitMinutes !== null
-      ? Math.max(
-          0,
-          Math.round(
-            (attempt.startedAt.getTime() + attempt.assessment.timeLimitMinutes * 60_000 - Date.now()) / 1000
-          )
-        )
-      : null;
+  let result: { score: number; perDomainScore: Record<string, number>; perSubSkillScore: Record<string, number> };
 
-  return {
-    id: attempt.id,
-    assessmentId: attempt.assessmentId,
-    userId: attempt.userId,
-    status: attempt.status,
-    startedAt: attempt.startedAt,
-    completedAt: attempt.completedAt,
-    score: attempt.score,
-    passed: attempt.passed,
-    violationCount: attempt.violationCount,
-    timeRemainingSeconds,
-    assessment: {
-      id: attempt.assessment.id,
-      title: attempt.assessment.title,
-      purpose: attempt.assessment.purpose,
-      timeLimitMinutes: attempt.assessment.timeLimitMinutes,
-      passingThreshold: attempt.assessment.passingThreshold,
+  if (attempt.assessment.type === "mcq" || attempt.assessment.type === "diagnostic") {
+    const answers = Array.isArray(opts.answers) ? (opts.answers as McqAnswer[]) : [];
+    result = scoreMcqLike(attempt.assessment.questions, answers);
+  } else if (attempt.assessment.type === "simulation") {
+    const path = Array.isArray(opts.answers) ? (opts.answers as ScenarioPathStep[]) : [];
+    const scored = scoreSimulationPath(attempt.assessment.scenario as unknown as ScenarioGraph, path);
+    result = { score: scored.score, perDomainScore: scored.perDomainScore, perSubSkillScore: scored.perSubSkillScore };
+  } else if (opts.externalScore) {
+    result = {
+      score: opts.externalScore.score,
+      perDomainScore: opts.externalScore.perDomainScore ?? {},
+      perSubSkillScore: opts.externalScore.perSubSkillScore ?? {},
+    };
+  } else {
+    throw new ApiError(400, "This assessment type requires an externally computed score");
+  }
+
+  const updated = await prisma.attempt.update({
+    where: { id: opts.attemptId },
+    data: {
+      answers: opts.answers as never,
+      score: result.score,
+      perDomainScore: result.perDomainScore as never,
+      perSubSkillScore: result.perSubSkillScore as never,
+      status: "submitted",
+      submittedAt: new Date(),
     },
-    questions,
-  };
-}
-
-export async function submitAnswer(
-  attemptId: string,
-  questionId: string,
-  selectedOptionIndex: number,
-  requestingUserId: string
-) {
-  const attempt = await expireIfTimeUp(await loadAttemptWithAssessment(attemptId, requestingUserId), requestingUserId);
-
-  if (attempt.status !== "in_progress") {
-    throw new ApiError(409, `Cannot submit an answer — attempt status is "${attempt.status}".`);
-  }
-
-  const belongsToAssessment = attempt.assessment.assessmentQuestions.some((aq) => aq.questionId === questionId);
-  if (!belongsToAssessment) {
-    throw new ApiError(400, "That question is not part of this attempt's assessment.");
-  }
-
-  return prisma.attemptAnswer.upsert({
-    where: { attemptId_questionId: { attemptId, questionId } },
-    create: { attemptId, questionId, selectedOptionIndex },
-    update: { selectedOptionIndex, answeredAt: new Date() },
   });
+
+  await feedCompetencyScores(attempt.userId, result.perSubSkillScore);
+
+  return updated;
 }
 
-export async function submitAttempt(attemptId: string, requestingUserId: string) {
-  const attempt = await expireIfTimeUp(await loadAttemptWithAssessment(attemptId, requestingUserId), requestingUserId);
+// Called by the violations module on a 3rd violation — forces submission of
+// whatever answers exist so far and marks the attempt kicked, not submitted.
+export async function forceKick(attemptId: string) {
+  const attempt = await prisma.attempt.findUnique({
+    where: { id: attemptId },
+    include: { assessment: true },
+  });
+  if (!attempt) throw new ApiError(404, "Attempt not found");
+  if (attempt.status !== "in_progress") return attempt;
 
-  if (attempt.status !== "in_progress") {
-    throw new ApiError(409, `Attempt is already finalized (status: "${attempt.status}").`);
+  let result = { score: 0, perDomainScore: {}, perSubSkillScore: {} };
+  if (
+    (attempt.assessment.type === "mcq" || attempt.assessment.type === "diagnostic") &&
+    Array.isArray(attempt.answers)
+  ) {
+    result = scoreMcqLike(attempt.assessment.questions, attempt.answers as unknown as McqAnswer[]);
   }
 
-  return finalizeAttempt(attempt, "submitted");
+  const updated = await prisma.attempt.update({
+    where: { id: attemptId },
+    data: {
+      score: result.score,
+      perDomainScore: result.perDomainScore as never,
+      perSubSkillScore: result.perSubSkillScore as never,
+      status: "kicked",
+      submittedAt: new Date(),
+    },
+  });
+
+  await feedCompetencyScores(attempt.userId, result.perSubSkillScore);
+
+  return updated;
+}
+
+export async function listAttemptsForSession(sessionId: string) {
+  return prisma.attempt.findMany({
+    where: { sessionId },
+    include: { user: true, violations: true },
+    orderBy: { startedAt: "desc" },
+  });
 }
