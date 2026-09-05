@@ -57,7 +57,7 @@ export default function Dashboard({ v }) {
             <p style={css("font-size:14px; line-height:1.6; color:#3B424E; margin:0; max-width:760px")}>Twenty minutes, eight items — MCQs, two job simulations and one written judgement question, all drawn from the work of {v.targetName}. You can keep taking courses without it; personalised recommendations need it, because Kartavya will not guess your competency level.</p>
           </div>
           <div style={css("display:grid; gap:9px")}>
-            <button onClick={v.startAssessment} className="btn-accent" style={css("font:inherit; font-size:15px; font-weight:800; cursor:pointer; padding:14px 24px; border:0; background:#F58220; color:#3D1D00; border-radius:8px; white-space:nowrap")}>Start assessment · 20 min</button>
+            <button onClick={v.startDiagnostic} className="btn-accent" style={css("font:inherit; font-size:15px; font-weight:800; cursor:pointer; padding:14px 24px; border:0; background:#F58220; color:#3D1D00; border-radius:8px; white-space:nowrap")}>Start assessment · 20 min</button>
             <button onClick={v.goCatalogue} style={css("font:inherit; font-size:14px; font-weight:600; cursor:pointer; padding:12px 22px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Just browse courses</button>
           </div>
         </div>
@@ -113,7 +113,7 @@ export default function Dashboard({ v }) {
           <div style={css("display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap")}>
             <div>
               <h2 style={css("font-family:'Poppins',sans-serif; font-size:20px; font-weight:700; color:#123E7C; margin:0")}>Your gap map</h2>
-              <div style={css("font-size:12.5px; color:#5A6472; margin-top:3px")}>Assessed level vs. requirement for {v.targetName} · scale 0–5</div>
+              <div style={css("font-size:12.5px; color:#5A6472; margin-top:3px")}>Assessed level vs. requirement for {v.realTargetRoleTitle} · scale 0–5</div>
             </div>
             <span style={css("font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:0.06em; border:1px solid #C9CFD8; background:#F5F6F8; padding:2px 6px; color:#5A6472")}>AI-ASSISTED</span>
           </div>
@@ -138,8 +138,8 @@ export default function Dashboard({ v }) {
             </svg>
             {v.notAssessed && (
               <div style={css("position:absolute; inset:0; background:rgba(243,244,246,0.86); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:24px")}>
-                <div style={css("font-size:15px; font-weight:700; color:#123E7C; max-width:320px; line-height:1.4")}>The dashed shape is what {v.targetName} requires. Your own shape appears after the assessment.</div>
-                <button onClick={v.startAssessment} style={css("font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:12px 20px; border:0; background:#123E7C; color:#fff; border-radius:8px")}>Start the assessment</button>
+                <div style={css("font-size:15px; font-weight:700; color:#123E7C; max-width:320px; line-height:1.4")}>The dashed shape is what {v.realTargetRoleTitle} requires. Your own shape appears after the assessment.</div>
+                <button onClick={v.startDiagnostic} style={css("font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:12px 20px; border:0; background:#123E7C; color:#fff; border-radius:8px")}>Start the assessment</button>
               </div>
             )}
           </div>

@@ -9,7 +9,7 @@ export default function LearningPath({ v }) {
           <h1 style={css("font-family:'Poppins',sans-serif; font-size:26px; font-weight:700; color:#123E7C; margin:0 0 8px")}>Your learning path is not generated yet</h1>
           <p style={css("font-size:14.5px; line-height:1.6; color:#3B424E; margin:0 auto 20px; max-width:520px")}>A path is a sequence, not a list — it needs to know where you currently stand. Complete the baseline assessment and Kartavya will build three sequenced stages against your target role. Until then, the full catalogue is open to browse.</p>
           <div style={css("display:flex; gap:12px; justify-content:center; flex-wrap:wrap")}>
-            <button onClick={v.startAssessment} className="btn-accent" style={css("font:inherit; font-size:15px; font-weight:800; cursor:pointer; padding:14px 24px; border:0; background:#F58220; color:#3D1D00; border-radius:8px")}>Start assessment · 20 min</button>
+            <button onClick={v.startDiagnostic} className="btn-accent" style={css("font:inherit; font-size:15px; font-weight:800; cursor:pointer; padding:14px 24px; border:0; background:#F58220; color:#3D1D00; border-radius:8px")}>Start assessment · 20 min</button>
             <button onClick={v.goCatalogue} style={css("font:inherit; font-size:15px; font-weight:600; cursor:pointer; padding:14px 22px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px")}>Browse courses</button>
           </div>
         </div>
