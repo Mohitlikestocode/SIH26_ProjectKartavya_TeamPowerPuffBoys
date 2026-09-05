@@ -46,36 +46,37 @@ export interface CompleteJsonOptions<T> {
   maxTokens?: number;
 }
 
+const MAX_ATTEMPTS = 5;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Groq's free tier rate-limits well before a full sweep finishes, and the
+ * grader makes one call per criterion per answer — so this is the normal path,
+ * not an edge case. Honours Retry-After when the API sends one, otherwise backs
+ * off exponentially with jitter so parallel callers do not resynchronise.
+ */
+function retryDelayMs(error: unknown, attempt: number): number {
+  const header = (error as { headers?: Record<string, string> })?.headers?.["retry-after"];
+  const advised = header ? Number(header) * 1000 : NaN;
+  if (Number.isFinite(advised) && advised > 0) return advised + 250;
+  return Math.min(2 ** attempt * 1000, 30_000) + Math.random() * 500;
+}
+
 export async function completeJson<T>(opts: CompleteJsonOptions<T>): Promise<T> {
   let content: string | null | undefined;
 
-  try {
-    const response = await opts.client.chat.completions.create({
-      model: opts.model,
-      max_tokens: opts.maxTokens ?? 16000,
-      // Generation, not extraction — a little variation stops a sweep of 28
-      // sub-skills producing 28 items with the same sentence rhythm. Low
-      // enough that the schema still holds.
-      temperature: 0.4,
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: opts.user },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: strictJsonSchema(opts.schema, opts.schemaName),
-      },
-    });
-
-    const choice = response.choices[0];
-    if (choice?.finish_reason === "length") {
-      throw new Error(
-        "Model hit the output token limit mid-object. Lower --batch-size so each response is shorter.",
-      );
+  for (let attempt = 0; ; attempt++) {
+    try {
+      content = await requestOnce(opts);
+      break;
+    } catch (error) {
+      const isRateLimit = error instanceof Groq.RateLimitError;
+      if (!isRateLimit || attempt >= MAX_ATTEMPTS - 1) throw describeError(error);
+      const wait = retryDelayMs(error, attempt);
+      process.stderr.write(`    rate limited — retrying in ${Math.round(wait / 1000)}s\n`);
+      await sleep(wait);
     }
-    content = choice?.message?.content;
-  } catch (error) {
-    throw describeError(error);
   }
 
   if (!content) throw new Error("Model returned an empty response.");
@@ -101,6 +102,33 @@ export async function completeJson<T>(opts: CompleteJsonOptions<T>): Promise<T> 
   return result.data;
 }
 
+async function requestOnce<T>(opts: CompleteJsonOptions<T>): Promise<string | null | undefined> {
+  const response = await opts.client.chat.completions.create({
+    model: opts.model,
+    max_tokens: opts.maxTokens ?? 16000,
+    // Generation, not extraction — a little variation stops a sweep of 28
+    // sub-skills producing 28 items with the same sentence rhythm. Low enough
+    // that the schema still holds.
+    temperature: 0.4,
+    messages: [
+      { role: "system", content: opts.system },
+      { role: "user", content: opts.user },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: strictJsonSchema(opts.schema, opts.schemaName),
+    },
+  });
+
+  const choice = response.choices[0];
+  if (choice?.finish_reason === "length") {
+    throw new Error(
+      "Model hit the output token limit mid-object. Lower --batch-size so each response is shorter.",
+    );
+  }
+  return choice?.message?.content;
+}
+
 function describeError(error: unknown): Error {
   if (error instanceof Groq.AuthenticationError) {
     return new Error(
@@ -108,7 +136,9 @@ function describeError(error: unknown): Error {
     );
   }
   if (error instanceof Groq.RateLimitError) {
-    return new Error("Rate limited by Groq. Wait and re-run, or lower --batch-size.");
+    return new Error(
+      `Rate limited by Groq after ${MAX_ATTEMPTS} attempts. Wait a minute and re-run, or use a smaller --cases / --batch-size.`,
+    );
   }
   if (error instanceof Groq.BadRequestError) {
     return new Error(

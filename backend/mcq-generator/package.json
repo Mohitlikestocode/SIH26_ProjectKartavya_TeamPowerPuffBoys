@@ -2,12 +2,13 @@
   "name": "kartavya-mcq-generator",
   "version": "0.1.0",
   "private": true,
-  "description": "Case-based MCQ generator for Kartavya (SIH26101) — standalone MVP, no server, no database.",
+  "description": "Case-based MCQ generator for Kartavya (SIH26101) \u2014 standalone MVP, no server, no database.",
   "scripts": {
     "generate": "tsx src/cli.ts",
-    "demo:broad": "tsx src/cli.ts --source samples/sampling-module.txt --skills domain:Statistical --stage broad --mock",
-    "demo:specific": "tsx src/cli.ts --source samples/sampling-module.txt --skills Sampling --stage specific --mock",
-    "lint": "tsc --noEmit"
+    "demo:broad": "tsx src/cli.ts --source samples/sampling-module.txt --skills domain:Statistical --stage broad --mock --out out/mock/broad",
+    "demo:specific": "tsx src/cli.ts --source samples/sampling-module.txt --skills Sampling --stage specific --mock --out out/mock/specific",
+    "lint": "tsc --noEmit",
+    "selftest": "tsx src/selftest.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

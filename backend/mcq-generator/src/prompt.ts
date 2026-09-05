@@ -24,7 +24,9 @@ RULES FOR EACH QUESTION:
 - Vary which key is correct across a set. Do not let the answer settle on one letter.
 - "id" is a short unique slug, e.g. "samp-rotational-panel-01".
 
-COMPETENCY TAGS (use exactly these spellings in the "domain" field):
+COMPETENCY TAGS. The "domain" field takes the SUB-SKILL NAME ONLY — "Sampling", not
+"Statistical: Sampling" and not "Statistical". The grouping below is context for you,
+not a format to copy:
 ${Object.entries(ONTOLOGY)
   .map(([domain, subSkills]) => `  ${domain}: ${subSkills.join(", ")}`)
   .join("\n")}`;
