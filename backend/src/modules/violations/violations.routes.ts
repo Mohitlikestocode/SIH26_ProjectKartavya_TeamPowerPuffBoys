@@ -1,7 +1,17 @@
 import { Router } from "express";
-import * as controller from "./violations.controller";
+import { logHandler, timelineHandler } from "./violations.controller";
+import { requireAuth } from "../../middleware/auth";
+import { requireRole } from "../../middleware/rbac";
 
-// Violations/Proctoring routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const violationsRouter = Router();
 
-// TODO: wire actual endpoints for the Violations/Proctoring module.
+// Learner's proctoring client (TensorFlow.js coco-ssd / face-api.js, plus
+// fullscreen/visibility listeners) posts events here during an active attempt.
+violationsRouter.post("/", requireAuth, logHandler);
+// Trainer/org-admin audit-trail view.
+violationsRouter.get(
+  "/:attemptId",
+  requireAuth,
+  requireRole("trainer", "org_admin"),
+  timelineHandler,
+);

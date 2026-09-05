@@ -1,7 +1,11 @@
 import { Router } from "express";
-import * as controller from "./assessments.controller";
+import { createHandler, getHandler, listHandler, diagnosticHandler } from "./assessments.controller";
+import { requireAuth } from "../../middleware/auth";
+import { requireRole } from "../../middleware/rbac";
 
-// Assessments routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const assessmentsRouter = Router();
 
-// TODO: wire actual endpoints for the Assessments module.
+assessmentsRouter.get("/diagnostic", requireAuth, diagnosticHandler);
+assessmentsRouter.post("/", requireAuth, requireRole("trainer", "org_admin"), createHandler);
+assessmentsRouter.get("/", requireAuth, listHandler);
+assessmentsRouter.get("/:id", requireAuth, getHandler);

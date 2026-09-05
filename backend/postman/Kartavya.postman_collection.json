@@ -1,19 +1,239 @@
 {
   "info": {
     "name": "Kartavya Backend (SIH26101)",
-    "description": "Placeholder collection — requests are added as each phase's endpoints land.",
+    "description": "Covers Phase 1-3: auth, users, competency, iGOT/NSSTA search, recommendations, assessments, attempts, sessions/QR, violations/proctoring.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "item": [
-    {
-      "name": "Health",
-      "request": {
-        "method": "GET",
-        "url": "{{baseUrl}}/health"
-      }
-    }
-  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:4000" }
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "token", "value": "" },
+    { "key": "trainerToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "assessmentId", "value": "" },
+    { "key": "sessionId", "value": "" },
+    { "key": "joinToken", "value": "" },
+    { "key": "attemptId", "value": "" }
+  ],
+  "item": [
+    { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/health" } },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"newlearner@kartavya.gov.in\",\n  \"password\": \"password123\",\n  \"name\": \"New Learner\",\n  \"role\": \"learner\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (learner)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"learner@kartavya.gov.in\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (trainer)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"trainer@kartavya.gov.in\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (org_admin)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@kartavya.gov.in\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me" } }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        { "name": "List target roles", "request": { "method": "GET", "url": "{{baseUrl}}/api/users/target-roles" } },
+        {
+          "name": "Update my profile (set target role)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/users/me",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"targetRoleId\": \"<targetRoleId from List target roles>\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Competency",
+      "item": [
+        { "name": "Gap map (radar chart data)", "request": { "method": "GET", "url": "{{baseUrl}}/api/competency/gap-map" } },
+        { "name": "Ranked gaps", "request": { "method": "GET", "url": "{{baseUrl}}/api/competency/gaps" } },
+        { "name": "My raw scores", "request": { "method": "GET", "url": "{{baseUrl}}/api/competency/me" } }
+      ]
+    },
+    {
+      "name": "Course search",
+      "item": [
+        { "name": "iGOT search", "request": { "method": "GET", "url": "{{baseUrl}}/api/courses/igot?tag=Python&q=data" } },
+        { "name": "NSSTA search", "request": { "method": "GET", "url": "{{baseUrl}}/api/courses/nssta?tag=GIS&cadre=ISS" } }
+      ]
+    },
+    {
+      "name": "Recommendations",
+      "item": [
+        { "name": "My recommendations", "request": { "method": "GET", "url": "{{baseUrl}}/api/recommendations/me" } }
+      ]
+    },
+    {
+      "name": "Assessments (trainer/org_admin)",
+      "item": [
+        { "name": "Diagnostic (any role)", "request": { "method": "GET", "url": "{{baseUrl}}/api/assessments/diagnostic" } },
+        {
+          "name": "Create MCQ assessment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/assessments",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"mcq\",\n  \"title\": \"Sampling Methodology Quick Check\",\n  \"domainTags\": [\"Statistical\"],\n  \"subSkillTags\": [\"Sampling\"],\n  \"timeLimitSeconds\": 600,\n  \"passingScore\": 50,\n  \"questions\": [\n    { \"id\": \"q1\", \"stem\": \"Which sampling method gives every unit equal selection probability?\", \"options\": [\"SRS\", \"Convenience\", \"Quota\", \"Snowball\"], \"correctIndex\": 0, \"domainTag\": \"Statistical\", \"subSkillTag\": \"Sampling\" }\n  ]\n}"
+            }
+          }
+        },
+        { "name": "List assessments", "request": { "method": "GET", "url": "{{baseUrl}}/api/assessments" } },
+        { "name": "Get assessment by id", "request": { "method": "GET", "url": "{{baseUrl}}/api/assessments/{{assessmentId}}" } }
+      ]
+    },
+    {
+      "name": "Sessions / QR",
+      "item": [
+        {
+          "name": "Create session (generates QR)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sessions",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"assessmentId\": \"{{assessmentId}}\",\n  \"name\": \"Batch 12 - Sampling Check\",\n  \"targetAudience\": \"ISS probationers\",\n  \"expiresInMinutes\": 120\n}"
+            }
+          }
+        },
+        {
+          "name": "My sessions (trainer)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/sessions/mine",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] }
+          }
+        },
+        { "name": "Get session (+ QR)", "request": { "method": "GET", "url": "{{baseUrl}}/api/sessions/{{sessionId}}" } },
+        {
+          "name": "Regenerate QR (invalidates old one)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sessions/{{sessionId}}/regenerate-qr",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] }
+          }
+        },
+        {
+          "name": "Join session (scan -> creates Attempt)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/sessions/{{sessionId}}/join",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{joinToken}}\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attempts",
+      "item": [
+        {
+          "name": "Start attempt directly (e.g. diagnostic)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/attempts",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"assessmentId\": \"{{assessmentId}}\"\n}" }
+          }
+        },
+        { "name": "Get attempt", "request": { "method": "GET", "url": "{{baseUrl}}/api/attempts/{{attemptId}}" } },
+        {
+          "name": "Submit attempt",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/attempts/{{attemptId}}/submit",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answers\": [ { \"questionId\": \"q1\", \"selectedIndex\": 0 } ]\n}"
+            }
+          }
+        },
+        {
+          "name": "List attempts for session (trainer/org_admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/attempts/session/{{sessionId}}",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Violations / Proctoring",
+      "item": [
+        {
+          "name": "Log violation",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/violations",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attemptId\": \"{{attemptId}}\",\n  \"type\": \"tab_switch\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Violation timeline (trainer/org_admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/violations/{{attemptId}}",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{trainerToken}}", "type": "string" }] }
+          }
+        }
+      ]
+    }
   ]
 }

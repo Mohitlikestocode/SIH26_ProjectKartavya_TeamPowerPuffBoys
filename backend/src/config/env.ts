@@ -17,4 +17,5 @@ export const env = {
   sarvamApiKey: process.env.SARVAM_API_KEY ?? "",
   sarvamEnabled: (process.env.SARVAM_ENABLED ?? "false") === "true",
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
 };

@@ -1,7 +1,17 @@
 import { Router } from "express";
-import * as controller from "./attempts.controller";
+import { startHandler, getHandler, submitHandler, listForSessionHandler } from "./attempts.controller";
+import { requireAuth } from "../../middleware/auth";
+import { requireRole } from "../../middleware/rbac";
 
-// Attempts routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const attemptsRouter = Router();
 
-// TODO: wire actual endpoints for the Attempts module.
+// Direct (non-session) attempt start — e.g. the diagnostic/onboarding test.
+attemptsRouter.post("/", requireAuth, startHandler);
+attemptsRouter.get("/:id", requireAuth, getHandler);
+attemptsRouter.post("/:id/submit", requireAuth, submitHandler);
+attemptsRouter.get(
+  "/session/:sessionId",
+  requireAuth,
+  requireRole("trainer", "org_admin"),
+  listForSessionHandler,
+);

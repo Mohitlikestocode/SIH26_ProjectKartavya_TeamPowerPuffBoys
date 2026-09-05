@@ -1,7 +1,10 @@
 import { Router } from "express";
-import * as controller from "./competency.controller";
+import { gapMapHandler, rankedGapsHandler, myScoresHandler } from "./competency.controller";
+import { requireAuth } from "../../middleware/auth";
 
-// Competency routes — Phase scaffold, endpoints implemented per prompt.md build order.
 export const competencyRouter = Router();
 
-// TODO: wire actual endpoints for the Competency module.
+// Radar-chart-ready: current vector + required vector, same axes, per domain.
+competencyRouter.get("/gap-map", requireAuth, gapMapHandler);
+competencyRouter.get("/gaps", requireAuth, rankedGapsHandler);
+competencyRouter.get("/me", requireAuth, myScoresHandler);
