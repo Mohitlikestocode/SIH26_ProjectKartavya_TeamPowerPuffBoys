@@ -11,3 +11,108 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// --- Assessment module / Phase 1: PDF -> MCQ generation pipeline ---
+
+enum DocumentStatus {
+  pending
+  processing
+  processed
+  failed
+}
+
+enum QuestionStatus {
+  draft
+  approved
+  rejected
+}
+
+model SourceDocument {
+  id               String         @id @default(cuid())
+  originalFilename String
+  mimeType         String
+  storagePath      String
+  status           DocumentStatus @default(pending)
+  pageCount        Int?
+  // Pages/slides that had no extractable text and were routed through OCR fallback.
+  ocrFlaggedPages  Int[]          @default([])
+  failureReason    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  chunks    Chunk[]
+  questions Question[]
+}
+
+model Chunk {
+  id         String   @id @default(cuid())
+  documentId String
+  document   SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sequence   Int
+  heading    String?
+  text       String
+  createdAt  DateTime @default(now())
+
+  questions Question[]
+
+  @@unique([documentId, sequence])
+}
+
+model Question {
+  id               String          @id @default(cuid())
+  // Nullable: manually-created questions (Phase 2) have no source chunk.
+  sourceDocumentId String?
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  chunkId          String?
+  chunk            Chunk?          @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  chunkText        String?
+  question         String
+  options          String[]
+  isNegatedStem    Boolean         @default(false)
+  correctOption    Int
+  // OptionExplanation[4], index-aligned to `options`:
+  // [{ optionIndex, isTrueStatement, isCorrect, text }, ...].
+  // isCorrect/correctOption are derived in code (see src/lib/mcq/deriveCorrectOption.ts) from
+  // isTrueStatement + isNegatedStem — never trusted directly from the model or an admin edit.
+  // Rows created before this field existed on the wire don't have isTrueStatement populated.
+  explanations     Json
+  // Stub fields — populated by a later competency-ontology module.
+  domain           String          @default("TBD")
+  skill            String          @default("TBD")
+  status           QuestionStatus  @default(draft)
+  createdAt        DateTime        @default(now())
+
+  editLogs QuestionEditLog[]
+
+  @@index([sourceDocumentId])
+  @@index([chunkId])
+  @@index([status])
+  @@index([isNegatedStem])
+}
+
+// Audit trail for admin edits to a question (AI-generated or manual) — who changed what, when.
+// `editedBy` is a placeholder identity string (see src/middleware/adminIdentity.ts) until a real
+// auth/user model exists; it should become a foreign key to that model once Auth is built.
+model QuestionEditLog {
+  id           String   @id @default(cuid())
+  questionId   String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  editedBy     String
+  editedAt     DateTime @default(now())
+  fieldChanged String
+  oldValue     String?
+  newValue     String?
+
+  @@index([questionId])
+}
+
+// Audit trail for generations rejected by the validation layer — never silently discarded.
+model GenerationRejection {
+  id        String   @id @default(cuid())
+  chunkId   String
+  reason    String
+  rawOutput String
+  createdAt DateTime @default(now())
+
+  @@index([chunkId])
+}

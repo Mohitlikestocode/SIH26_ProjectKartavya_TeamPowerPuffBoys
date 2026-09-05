@@ -12,6 +12,8 @@ import { recommendationsRouter } from "./modules/recommendations/recommendations
 import { igotRouter } from "./modules/igot/igot.routes";
 import { nsstaRouter } from "./modules/nssta/nssta.routes";
 import { assessmentsRouter } from "./modules/assessments/assessments.routes";
+import { documentsRouter } from "./modules/documents/documents.routes";
+import { questionsRouter } from "./modules/questions/questions.routes";
 import { attemptsRouter } from "./modules/attempts/attempts.routes";
 import { sessionsRouter } from "./modules/sessions/sessions.routes";
 import { violationsRouter } from "./modules/violations/violations.routes";
@@ -35,6 +37,8 @@ app.use("/api/recommendations", recommendationsRouter);
 app.use("/api/courses/igot", igotRouter);
 app.use("/api/courses/nssta", nsstaRouter);
 app.use("/api/assessments", assessmentsRouter);
+app.use("/api/documents", documentsRouter);
+app.use("/api/questions", questionsRouter);
 app.use("/api/attempts", attemptsRouter);
 app.use("/api/sessions", sessionsRouter);
 app.use("/api/violations", violationsRouter);
