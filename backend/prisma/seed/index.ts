@@ -5,6 +5,7 @@ import { seedTargetRoles } from "./roles.seed";
 import { seedIgotCourses } from "./igot.seed";
 import { seedNsstaProgrammes } from "./nssta.seed";
 import { seedSyntheticWorkforce } from "./synthetic.seed";
+import { seedDiagnosticQuestions } from "./diagnosticQuestions.seed";
 import { getOrCreateDiagnostic } from "../../src/modules/assessments/assessments.service";
 
 const prisma = new PrismaClient();
@@ -70,6 +71,7 @@ async function main() {
 
   const orgAdmin = await prisma.user.findFirst({ where: { role: "org_admin" } });
   if (orgAdmin) {
+    await seedDiagnosticQuestions(prisma);
     await getOrCreateDiagnostic(orgAdmin.id);
     await seedSyntheticWorkforce(prisma);
   } else {

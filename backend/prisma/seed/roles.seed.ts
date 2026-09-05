@@ -117,6 +117,22 @@ export const TARGET_ROLES: TargetRoleSeed[] = [
       "Change Management": 55,
     },
   },
+  {
+    title: "Junior Statistical Officer – Field Operations",
+    cadre: "SSS",
+    description:
+      "Executes NSSO large-scale sample survey field work — enumeration, first-stage-unit selection, and coordination with FOD/state survey machinery.",
+    requirements: {
+      "Survey Design": 60,
+      Sampling: 55,
+      SQL: 40,
+      Python: 35,
+      "Data Privacy": 45,
+      Cybersecurity: 40,
+      "Project Management": 45,
+      Leadership: 40,
+    },
+  },
 ];
 
 export async function seedTargetRoles(prisma: PrismaClient) {

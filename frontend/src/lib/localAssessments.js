@@ -1,5 +1,3 @@
-import { ITEMS } from "../data";
-
 // Fully client-side, zero-network, zero-auth fallback for the two-part baseline assessment
 // (general MCQ + situation simulation). Used when there's no backend/token to talk to, so the
 // prototype demo's core learner flow never dead-ends on "Not signed in." — mirrors the shape and
@@ -7,26 +5,115 @@ import { ITEMS } from "../data";
 // scoreSimulationPath) closely enough that swapping in a real backend later is seamless.
 
 // --- MCQ diagnostic --------------------------------------------------------
-
-function bestOptionIndex(options) {
-  return options.reduce((bestI, o, i, arr) => (o[2] > arr[bestI][2] ? i : bestI), 0);
-}
+// Mirrors the curated "Deputy Director – Price Statistics" baseline diagnostic seeded into the
+// bank (backend/prisma/seed/diagnosticQuestions.seed.ts) — the same 10 questions (4 Price
+// Statistics + 6 shared Technical/Digital Governance/Behavioural) the seeded demo learner account
+// gets for real, kept in sync by hand rather than shared code since one runs in the browser with
+// no build step tying it to the backend.
+const LOCAL_DIAGNOSTIC_QUESTIONS = [
+  {
+    id: "local-price-stats-1",
+    stem: "The all-India Wholesale Price Index (WPI) series currently uses which base year?",
+    options: ["2004-05", "2011-12", "2016-17", "2001-02"],
+    correctIndex: 1,
+    domainTag: "Statistical",
+    subSkillTag: "Price Statistics",
+  },
+  {
+    id: "local-price-stats-2",
+    stem: "Which index specifically measures price changes faced by households for consumption purposes?",
+    options: ["Wholesale Price Index (WPI)", "Index of Industrial Production (IIP)", "Consumer Price Index (CPI)", "Index of Service Production (ISP)"],
+    correctIndex: 2,
+    domainTag: "Statistical",
+    subSkillTag: "Price Statistics",
+  },
+  {
+    id: "local-price-stats-3",
+    stem: "Which of the following is NOT one of the standard CPI series compiled in India?",
+    options: ["CPI (Rural)", "CPI (Urban)", "CPI (Agricultural Labourer / Rural Labourer)", "CPI (Export Price Parity)"],
+    correctIndex: 3,
+    domainTag: "Statistical",
+    subSkillTag: "Price Statistics",
+  },
+  {
+    id: "local-price-stats-4",
+    stem: "Which government body compiles the CPI for Agricultural Labourers and Rural Labourers?",
+    options: ["Reserve Bank of India", "Labour Bureau", "NITI Aayog", "DGCI&S"],
+    correctIndex: 1,
+    domainTag: "Statistical",
+    subSkillTag: "Price Statistics",
+  },
+  {
+    id: "local-shared-sql",
+    stem: "In SQL, which clause is used to filter rows after an aggregation (e.g., after GROUP BY)?",
+    options: ["WHERE", "HAVING", "ORDER BY", "LIMIT"],
+    correctIndex: 1,
+    domainTag: "Technical",
+    subSkillTag: "SQL",
+  },
+  {
+    id: "local-shared-python",
+    stem: "What is the primary use of Python's pandas library in official statistics work?",
+    options: ["Reading and manipulating tabular/structured data", "Rendering 3D graphics", "Sending emails", "Managing a database's physical disk storage"],
+    correctIndex: 0,
+    domainTag: "Technical",
+    subSkillTag: "Python",
+  },
+  {
+    id: "local-shared-dpdp",
+    stem: "The Digital Personal Data Protection (DPDP) Act, governing personal data processing in India, was enacted in which year?",
+    options: ["2000", "2011", "2023", "2018"],
+    correctIndex: 2,
+    domainTag: "Digital Governance",
+    subSkillTag: "Data Privacy",
+  },
+  {
+    id: "local-shared-rbac",
+    stem: "What is a key purpose of role-based access control (RBAC) in a government data system?",
+    options: [
+      "To give every user identical, unrestricted access",
+      "To restrict a user's access/actions to only what's appropriate for their role",
+      "To deliberately slow the system down",
+      "To eliminate the need for audit logging",
+    ],
+    correctIndex: 1,
+    domainTag: "Digital Governance",
+    subSkillTag: "Cybersecurity",
+  },
+  {
+    id: "local-shared-stakeholder",
+    stem: "What does 'stakeholder management' primarily involve in a project management context?",
+    options: [
+      "Ignoring feedback from other departments",
+      "Identifying, engaging, and balancing the needs/expectations of people affected by or influencing a project",
+      "Only managing your direct subordinates",
+      "A financial auditing technique",
+    ],
+    correctIndex: 1,
+    domainTag: "Behavioural/Managerial",
+    subSkillTag: "Project Management",
+  },
+  {
+    id: "local-shared-leadership",
+    stem: "Which is generally considered a hallmark of effective leadership in a public-sector organization?",
+    options: [
+      "Making all decisions without input from team members",
+      "Clear communication, accountability, and empowering team members",
+      "Avoiding documentation of decisions",
+      "Delegating all responsibility with zero oversight",
+    ],
+    correctIndex: 1,
+    domainTag: "Behavioural/Managerial",
+    subSkillTag: "Leadership",
+  },
+];
 
 export function buildLocalDiagnostic() {
-  const questions = ITEMS.filter((it) => !it.essay).map((it) => ({
-    id: it.id,
-    stem: it.stem,
-    options: it.options.map((o) => o[1]),
-    correctIndex: bestOptionIndex(it.options),
-    domainTag: it.domain,
-    subSkillTag: it.skill,
-    isStub: true,
-  }));
   return {
     id: "local-mock-diagnostic",
     type: "diagnostic",
-    title: "Baseline Diagnostic (offline demo)",
-    questions,
+    title: "Baseline Diagnostic — Deputy Director – Price Statistics (offline demo)",
+    questions: LOCAL_DIAGNOSTIC_QUESTIONS,
     timeLimitSeconds: 20 * 60,
     passingScore: 40,
   };
