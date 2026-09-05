@@ -437,13 +437,8 @@ export default function App() {
     meanLevel: meanLevelNum.toFixed(1), assessedOn: realAssessedOn,
     firstStepTitle: stages[0].items[0].title,
     // Real diagnostic flow (replaces the old fake ITEMS-based startAssessment/retakeAssessment/
-    // submitAssessment). Known side effect, flagged rather than silently accepted: the OLD mock
-    // assessment (st.answers/st.essay-driven) was the only thing feeding Dashboard.jsx's gap map
-    // (domainCards/gapIndex/gaps, still computed above via levels()) — since this is now the only
-    // reachable "take the assessment" entry point and it no longer touches st.answers/st.essay at
-    // all, that gap map will stay at its static/zero mock state regardless of real diagnostic
-    // performance. Reconciling Dashboard.jsx with real perDomainScore/perSubSkillScore data is a
-    // separate, out-of-scope piece of work.
+    // submitAssessment). Dashboard now reads live data from GET /api/dashboards/employee, refreshed
+    // after login and after every submission, so st.answers/st.essay no longer affect learner views.
     startDiagnostic, submitDiagnostic,
     diagLoading: st.diagLoading, diagLoadError: st.diagLoadError,
     diagQuestions: st.diagAssessment?.questions ?? [],
