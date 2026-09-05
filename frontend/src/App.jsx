@@ -4,7 +4,7 @@ import { qr } from "./components/QrCode";
 import {
   D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
   CATALOGUE, INPROGRESS, CERTS, QUESTIONS, HEAT, RAMP, EFFECT, EMERGING,
-  REPORTS, FLOW, ASSIST,
+  REPORTS, SESSIONS, FLOW, ASSIST,
 } from "./data";
 
 import Header from "./components/Header";
@@ -44,6 +44,10 @@ const initialState = {
   lang: "EN", scale: 1, contrast: false,
   scanner: false, scanInfo: false, assistant: false, generated: false,
   prefs: false, acct: false,
+  genCount: "20", genCourse: 1, genLang: "English",
+  session: 0, addOpen: false,
+  addStem: "", addO: ["", "", "", ""], addCorrect: 0, addDomain: "Statistical", addDiff: "Moderate",
+  customQs: [],
   qStatus: { "01": "approved", "02": "pending", "03": "approved", "04": "pending" },
 };
 
@@ -86,7 +90,7 @@ export default function App() {
         : [["landing", "Overview"], ["lcat", "Course catalogue"]];
   const navItems = nav.map((n) => {
     const on = st.screen === n[0];
-    return { label: n[1], go: go(n[0]), bg: on ? "#EAF0F8" : "transparent", fg: on ? "#0A2240" : "#3B424E", weight: on ? "700" : "500" };
+    return { label: n[1], go: go(n[0]), bg: "transparent", underline: on ? "#F58220" : "transparent", fg: on ? "#123E7C" : "#3B424E", weight: on ? "700" : "500" };
   });
 
   const answeredCount = ITEMS.filter((i) => (i.essay ? st.essay.trim().length > 0 : st.answers[i.id] !== undefined)).length;
@@ -130,7 +134,7 @@ export default function App() {
   topGaps.forEach((g) => { if (pathGaps.length < 2 && !pathGaps.some((p) => p.domain === g.domain)) pathGaps.push(g); });
   const stages = STAGE_META.map((m, si) => ({
     n: String(si + 1), title: m.title, gate: m.gate,
-    accent: si === 0 ? "#1F5AA6" : si === 1 ? "#6D28D9" : "#B08D2E",
+    accent: si === 0 ? "#1B5CB8" : si === 1 ? "#E9761B" : "#F58220",
     items: pathGaps.map((g) => {
       const it = (SKILLPATH[g.name] || SKILLPATH["Sampling methodology"])[si];
       return Object.assign({}, SRC[it.src], {
@@ -146,7 +150,7 @@ export default function App() {
   const stageHeads = STAGE_META.map((m, si) => ({
     n: String(si + 1), phase: m.phase, title: m.title, note: m.note,
     meta: stages[si].items.length + " items · " + (si === 0 ? "start now" : si === 1 ? "next quarter" : "within 12 months"),
-    dotBg: si === 0 ? "#0A2240" : "#fff", dotFg: si === 0 ? "#fff" : "#0A2240", dotBorder: si === 0 ? "#0A2240" : "#C9CFD8",
+    dotBg: si === 0 ? "#123E7C" : "#fff", dotFg: si === 0 ? "#fff" : "#123E7C", dotBorder: si === 0 ? "#123E7C" : "#C9CFD8",
   }));
 
   const recSkills = topGaps.slice(0, 3).map((g) => g.name);
@@ -161,18 +165,18 @@ export default function App() {
       domain: DOM[c.domain].label, domColor: DOM[c.domain].color, domTint: DOM[c.domain].tint, domBorder: DOM[c.domain].border,
       recommended: rec,
       recNote: rec && g ? "Recommended for you — closes your " + g.name + " gap (" + g.level.toFixed(1) + " of " + g.req.toFixed(1) + " required)" : "",
-      cardBorder: rec ? "#0A2240" : "#D9DDE4",
+      cardBorder: rec ? "#123E7C" : "#D9DDE4",
       cta: st.role ? (c.src === "iGOT" ? "Enrol on iGOT" : "Apply for intake") : "Sign in to enrol",
       onCta: st.role ? () => {} : go("signin"),
     });
   });
   const catChip = (k) => ({
-    bg: st.catDomain === k ? "#0A2240" : "#fff", fg: st.catDomain === k ? "#fff" : "#3B424E",
-    border: st.catDomain === k ? "#0A2240" : "#C9CFD8",
+    bg: st.catDomain === k ? "#123E7C" : "#fff", fg: st.catDomain === k ? "#fff" : "#3B424E",
+    border: st.catDomain === k ? "#123E7C" : "#C9CFD8",
   });
   const srcChip = (k) => ({
-    bg: st.catSource === k ? "#0A2240" : "#fff", fg: st.catSource === k ? "#fff" : "#3B424E",
-    border: st.catSource === k ? "#0A2240" : "#C9CFD8",
+    bg: st.catSource === k ? "#123E7C" : "#fff", fg: st.catSource === k ? "#fff" : "#3B424E",
+    border: st.catSource === k ? "#123E7C" : "#C9CFD8",
   });
   const cAll = catChip("All"), cS = catChip("Statistical"), cT = catChip("Technical"), cD = catChip("Digital Governance"), cB = catChip("Behavioural");
   const sAll = srcChip("All"), sI = srcChip("iGOT"), sN = srcChip("NSSTA");
@@ -183,14 +187,14 @@ export default function App() {
     const on = st.answers[item.id] === i;
     return {
       key: o[0], text: o[1], pick: () => setAnswer(item.id, i),
-      border: on ? "2px solid #0A2240" : "1px solid #DDE1E7", bg: on ? "#EAF0F8" : "#fff", keyFg: on ? "#0A2240" : "#7A8492",
+      border: on ? "2px solid #123E7C" : "1px solid #DDE1E7", bg: on ? "#E8F0FA" : "#fff", keyFg: on ? "#123E7C" : "#7A8492",
     };
   });
   const itemNav = ITEMS.map((it, i) => {
     const done = it.essay ? st.essay.trim().length > 0 : st.answers[it.id] !== undefined;
     return {
       no: String(i + 1).padStart(2, "0"), label: it.skill, go: () => setState({ cursor: i }),
-      border: i === st.cursor ? "1px solid #0A2240" : "1px solid #EEF0F3", bg: i === st.cursor ? "#EAF0F8" : "#fff",
+      border: i === st.cursor ? "1px solid #123E7C" : "1px solid #EEF0F3", bg: i === st.cursor ? "#E8F0FA" : "#fff",
       weight: i === st.cursor ? "700" : "400", dot: done ? "#166534" : "#DDE1E7",
     };
   });
@@ -224,13 +228,19 @@ export default function App() {
 
   const setQ = (no, val) => setState((s) => ({ qStatus: Object.assign({}, s.qStatus, { [no]: val }) }));
   const statuses = Object.values(st.qStatus);
-  const questions = QUESTIONS.map((q) => {
+  const ALLQ = QUESTIONS.concat(st.customQs);
+  const questions = ALLQ.map((q) => {
     const s0 = st.qStatus[q.no] || "pending";
     const d = DOM[q.domain];
     const conf = parseFloat(q.confidence);
     const cc = conf >= 0.85 ? ["#166534", "#EBF5EE", "#BBDEC7"] : conf >= 0.7 ? ["#9A3412", "#FDF0E4", "#EFCFAC"] : ["#991B1B", "#FBECEC", "#EBC4C4"];
     return {
       no: q.no, stem: q.stem, difficulty: q.difficulty, confidence: q.confidence, page: q.page, rationale: q.rationale,
+      manual: !!q.manual, aiGenerated: !q.manual,
+      originLabel: q.manual ? "Written by you" : "AI-generated",
+      originFg: q.manual ? "#123E7C" : "#5A6472",
+      originBg: q.manual ? "#E8F0FA" : "#F5F6F8",
+      originBorder: q.manual ? "#B9CFEC" : "#C9CFD8",
       domain: q.domain, domColor: d.color, domTint: d.tint, domBorder: d.border,
       confColor: cc[0], confTint: cc[1], confBorder: cc[2],
       options: q.options.map((o, i) => ({ key: o[0], text: o[1], border: i === q.correct ? "#BBDEC7" : "#E4E7EC", bg: i === q.correct ? "#F4FAF6" : "#fff" })),
@@ -252,11 +262,14 @@ export default function App() {
     return o;
   });
 
-  const tab = (k) => ({ fg: st.loginTab === k ? "#0A2240" : "#5A6472", border: st.loginTab === k ? "#0A2240" : "transparent", w: st.loginTab === k ? "700" : "600" });
+  const tab = (k) => {
+    const on = st.loginTab === k;
+    return { fg: on ? "#fff" : "#41506B", border: on ? "#123E7C" : "#C9D6E8", bg: on ? "#123E7C" : "#fff", w: on ? "700" : "600" };
+  };
   const tl = tab("learner"), tt = tab("trainer"), ta = tab("admin");
   const signIn = () => {
     const r = st.loginTab;
-    setState({ role: r, screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics" });
+    setState({ role: r, acct: false, prefs: false, screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics" });
   };
 
   const v = {
@@ -267,8 +280,9 @@ export default function App() {
     userDesig: L.desig, userFirst: "Anandi",
     goHome: () => setState({ screen: st.role === "learner" ? "ldash" : st.role === "trainer" ? "tstudio" : st.role === "admin" ? "oanalytics" : "landing" }),
     goSignin: go("signin"), goCatalogue: go("lcat"), goSystem: go("system"),
-    goDash: go("ldash"), goPath: go("lpath"), goAssess: go("lassess"), goReview: go("lresult"), goStudio: go("tstudio"),
-    signOut: () => setState({ role: null, screen: "landing" }),
+    goDash: go("ldash"), goPath: go("lpath"), goAssess: go("lassess"), goReview: go("lresult"),
+    goStudio: go("tstudio"), goUpload: go("tupload"),
+    signOut: () => setState({ role: null, screen: "landing", acct: false, prefs: false, assistant: false }),
     openScanner: () => setState({ scanner: true }),
     closeScanner: () => setState({ scanner: false }),
     scannerOpen: st.scanner,
@@ -288,9 +302,9 @@ export default function App() {
     isHindi: st.lang === "HI",
     assessed: st.assessed, notAssessed: !st.assessed,
     tabLearner: () => setState({ loginTab: "learner" }), tabTrainer: () => setState({ loginTab: "trainer" }), tabAdmin: () => setState({ loginTab: "admin" }),
-    tabLFg: tl.fg, tabLBorder: tl.border, tabLW: tl.w,
-    tabTFg: tt.fg, tabTBorder: tt.border, tabTW: tt.w,
-    tabAFg: ta.fg, tabABorder: ta.border, tabAW: ta.w,
+    tabLFg: tl.fg, tabLBorder: tl.border, tabLW: tl.w, tabLBg: tl.bg,
+    tabTFg: tt.fg, tabTBorder: tt.border, tabTW: tt.w, tabTBg: tt.bg,
+    tabAFg: ta.fg, tabABorder: ta.border, tabAW: ta.w, tabABg: ta.bg,
     loginRoleTitle: L.title, loginRoleNote: L.note, loginRoleInitial: L.initial, loginRoleColor: L.color,
     loginIdLabel: L.idLabel, loginIdValue: L.idValue, doSignIn: signIn,
     onTargetSelect: (e) => setState({ target: parseInt(e.target.value, 10) }),
@@ -341,28 +355,92 @@ export default function App() {
     pendingCount: statuses.filter((s) => s === "pending").length,
     generated: st.generated,
     doGenerate: () => { setState({ generated: true }); setTimeout(() => setState({ screen: "tstudio" }), 700); },
+    sessions: SESSIONS.map((s, i) => {
+      const on = st.session === i;
+      const sc = s.status === "Live" ? ["#166534", "#EBF5EE", "#BBDEC7"] : s.status === "Scheduled" ? ["#9A4A0B", "#FDF0E1", "#F3CFA6"] : ["#5A6472", "#F1F3F6", "#DDE1E7"];
+      return Object.assign({}, SRC[s.src], {
+        id: s.id, name: s.name, quiz: s.quiz, items: s.items, course: s.course, venue: s.venue, when: s.when, expires: s.expires,
+        joined: s.joined + " of " + s.total + " joined", pct: Math.round(s.joined / s.total * 100) + "%",
+        status: s.status, statusFg: sc[0], statusBg: sc[1], statusBorder: sc[2],
+        qr: qr(72, s.seed), select: () => setState({ session: i }),
+        cardBg: on ? "#F6FAFF" : "#fff", cardBorder: on ? "#1B5CB8" : "#E3E9F2",
+        selectedLabel: on ? "Showing" : "Show QR",
+      });
+    }),
+    sess: (() => {
+      const s = SESSIONS[st.session];
+      return Object.assign({}, SRC[s.src], {
+        id: s.id, name: s.name, quiz: s.quiz, items: s.items, course: s.course, venue: s.venue, when: s.when,
+        expires: s.expires, joined: s.joined + " of " + s.total, pct: Math.round(s.joined / s.total * 100) + "%",
+        status: s.status, qr: qr(196, s.seed),
+      });
+    })(),
+    genCourseTitle: CATALOGUE[st.genCourse].title,
+    genCourseSrc: SRC[CATALOGUE[st.genCourse].src].source,
+    genCourseIdx: String(st.genCourse),
+    courseOptions: CATALOGUE.map((c, i) => ({ i: String(i), title: c.title })),
+    onGenCourse: (e) => setState({ genCourse: parseInt(e.target.value, 10) }),
+    genCount: st.genCount,
+    onGenCount: (e) => setState({ genCount: e.target.value.replace(/[^0-9]/g, "").slice(0, 3) }),
+    setCount10: () => setState({ genCount: "10" }),
+    setCount20: () => setState({ genCount: "20" }),
+    setCount30: () => setState({ genCount: "30" }),
+    c10Bg: st.genCount === "10" ? "#123E7C" : "#fff", c10Fg: st.genCount === "10" ? "#fff" : "#123E7C",
+    c20Bg: st.genCount === "20" ? "#123E7C" : "#fff", c20Fg: st.genCount === "20" ? "#fff" : "#123E7C",
+    c30Bg: st.genCount === "30" ? "#123E7C" : "#fff", c30Fg: st.genCount === "30" ? "#fff" : "#123E7C",
+    genLang: st.genLang, onGenLang: (e) => setState({ genLang: e.target.value }),
+    addOpen: st.addOpen, addClosed: !st.addOpen,
+    openAdd: () => setState({ addOpen: true }),
+    closeAdd: () => setState({ addOpen: false }),
+    addStem: st.addStem, onAddStem: (e) => setState({ addStem: e.target.value }),
+    addOptions: st.addO.map((val, i) => ({
+      key: ["A", "B", "C", "D"][i], value: val,
+      onChange: (e) => setState((s) => { const o = s.addO.slice(); o[i] = e.target.value; return { addO: o }; }),
+      pick: () => setState({ addCorrect: i }),
+      markBg: st.addCorrect === i ? "#166534" : "#fff",
+      markFg: st.addCorrect === i ? "#fff" : "#5A6472",
+      markBorder: st.addCorrect === i ? "#166534" : "#C9D6E8",
+      markLabel: st.addCorrect === i ? "Correct answer" : "Mark correct",
+    })),
+    addDomain: st.addDomain, onAddDomain: (e) => setState({ addDomain: e.target.value }),
+    addDiff: st.addDiff, onAddDiff: (e) => setState({ addDiff: e.target.value }),
+    saveAdd: () => setState((s) => {
+      if (!s.addStem.trim()) return {};
+      const no = "M" + String(s.customQs.length + 1).padStart(2, "0");
+      const q = {
+        no, domain: s.addDomain, difficulty: s.addDiff, confidence: "—", page: "—", manual: true,
+        stem: s.addStem, options: s.addO.map((txt, i) => [["A", "B", "C", "D"][i], txt || "(blank option)"]),
+        correct: s.addCorrect, rationale: "Written and owned by you. Not model-generated, so no confidence score applies.",
+      };
+      return {
+        customQs: s.customQs.concat([q]), qStatus: Object.assign({}, s.qStatus, { [no]: "approved" }),
+        addOpen: false, addStem: "", addO: ["", "", "", ""], addCorrect: 0,
+      };
+    }),
+    manualCount: String(st.customQs.length),
+    totalItemCount: String(QUESTIONS.length + st.customQs.length),
     qrSmall: qr(96, 7717), qrMid: qr(130, 7717), qrLarge: qr(220, 7717),
     lang: st.lang,
     onLangSelect: (e) => setState({ lang: e.target.value }),
     textUp: () => setState({ scale: 1.25 }),
     textReset: () => setState({ scale: 1 }),
     textDown: () => setState({ scale: 0.92 }),
-    sizeSmBg: st.scale < 1 ? "#0A2240" : "#fff", sizeSmFg: st.scale < 1 ? "#fff" : "#0A2240",
-    sizeMdBg: st.scale >= 1 && st.scale < 1.2 ? "#0A2240" : "#fff", sizeMdFg: st.scale >= 1 && st.scale < 1.2 ? "#fff" : "#0A2240",
-    sizeLgBg: st.scale >= 1.2 ? "#0A2240" : "#fff", sizeLgFg: st.scale >= 1.2 ? "#fff" : "#0A2240",
+    sizeSmBg: st.scale < 1 ? "#123E7C" : "#fff", sizeSmFg: st.scale < 1 ? "#fff" : "#123E7C",
+    sizeMdBg: st.scale >= 1 && st.scale < 1.2 ? "#123E7C" : "#fff", sizeMdFg: st.scale >= 1 && st.scale < 1.2 ? "#fff" : "#123E7C",
+    sizeLgBg: st.scale >= 1.2 ? "#123E7C" : "#fff", sizeLgFg: st.scale >= 1.2 ? "#fff" : "#123E7C",
     langShort: st.lang,
     prefsOpen: st.prefs, acctOpen: st.acct,
     togglePrefs: () => setState((s) => ({ prefs: !s.prefs, acct: false })),
     toggleAcct: () => setState((s) => ({ acct: !s.acct, prefs: false })),
     closePopovers: () => setState({ prefs: false, acct: false }),
-    prefsBg: st.prefs ? "#0A2240" : "#fff", prefsFg: st.prefs ? "#fff" : "#0A2240",
-    prefsBorder: st.prefs ? "#0A2240" : "#C9CFD8",
-    acctBorder: st.acct ? "#0A2240" : "transparent",
+    prefsBg: st.prefs ? "#123E7C" : "#fff", prefsFg: st.prefs ? "#fff" : "#123E7C",
+    prefsBorder: st.prefs ? "#123E7C" : "#C9CFD8",
+    acctBorder: st.acct ? "#123E7C" : "transparent",
     contrastState: st.contrast ? "on" : "off",
     toggleContrast: () => setState((s) => ({ contrast: !s.contrast })),
-    contrastBtnBg: st.contrast ? "#0A2240" : "#fff",
-    contrastBtnFg: st.contrast ? "#fff" : "#0A2240",
-    contrastBorder: st.contrast ? "#0A2240" : "#C9CFD8",
+    contrastBtnBg: st.contrast ? "#123E7C" : "#fff",
+    contrastBtnFg: st.contrast ? "#fff" : "#123E7C",
+    contrastBorder: st.contrast ? "#123E7C" : "#C9CFD8",
   };
 
   return (

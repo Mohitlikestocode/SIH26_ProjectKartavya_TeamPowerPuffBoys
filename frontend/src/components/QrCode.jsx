@@ -17,7 +17,7 @@ export function qr(size, seed) {
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} role="img" aria-label="Session QR code" style={{ display: "block" }}>
       {on.map((p, i) => (
-        <rect key={i} x={p[1] * cell} y={p[0] * cell} width={cell + 0.4} height={cell + 0.4} fill="#0A2240" />
+        <rect key={i} x={p[1] * cell} y={p[0] * cell} width={cell + 0.4} height={cell + 0.4} fill="#123E7C" />
       ))}
     </svg>
   );

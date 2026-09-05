@@ -1,6 +1,6 @@
 body {
   margin: 0;
-  background: #F3F4F6;
+  background: #F4F7FB;
   color: #1A1D23;
   font-family: "Noto Sans", "Noto Sans Devanagari", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -11,11 +11,11 @@ body {
 }
 
 a {
-  color: #1F5AA6;
+  color: #1B5CB8;
   text-decoration: none;
 }
 a:hover {
-  color: #0A2240;
+  color: #123E7C;
   text-decoration: underline;
 }
 
@@ -25,12 +25,19 @@ button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visi
 }
 
 nav[aria-label="Primary"] {
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+nav[aria-label="Primary"]::-webkit-scrollbar {
+  height: 0;
 }
 
 ::selection {
-  background: #0A2240;
+  background: #123E7C;
   color: #fff;
+}
+
+h1, h2, h3, h4 {
+  font-family: 'Poppins', sans-serif;
 }
 
 /* Elements that carried a bespoke style-hover / style-focus in the source design */
@@ -38,31 +45,56 @@ nav[aria-label="Primary"] {
   left: 12px !important;
   top: 12px !important;
   z-index: 50;
-  background: #0A2240;
+  background: #123E7C;
   color: #fff;
   padding: 8px 12px;
-  border-radius: 3px;
+  border-radius: 8px;
 }
 
 .nav-btn:hover {
-  background: #F1F4F9 !important;
+  color: #123E7C !important;
+}
+
+/* Orange primary buttons (bg #F58220) darken on hover */
+.btn-accent:hover {
+  background: #E9761B !important;
+}
+
+.quick-link-blue:hover {
+  background: #E8F0FA !important;
+}
+
+.quick-link-orange:hover {
+  background: #FDF0E1 !important;
+}
+
+.btn-login-primary:hover {
+  background: #123E7C !important;
+}
+
+.btn-parichay:hover {
+  background: #FFF6EC !important;
 }
 
 .course-card:hover {
-  border-color: #0A2240 !important;
+  border-color: #123E7C !important;
 }
 
 .course-cta:hover {
-  background: #0A2240 !important;
+  background: #123E7C !important;
   color: #fff !important;
 }
 
 .path-item:hover {
-  border-color: #0A2240 !important;
+  border-color: #123E7C !important;
   background: #fff !important;
 }
 
 .path-item-cta:hover {
-  background: #0A2240 !important;
+  background: #123E7C !important;
   color: #fff !important;
+}
+
+.session-card:hover {
+  border-color: #1B5CB8 !important;
 }

@@ -1,21 +1,21 @@
 export const D = ["Statistical", "Technical", "Digital Governance", "Behavioural"];
 
 export const DOM = {
-  Statistical: { color: "#0E7490", tint: "#E6F4F7", border: "#B7DDE5", label: "Statistical" },
-  Technical: { color: "#6D28D9", tint: "#F2EDFB", border: "#CDBDEC", label: "Technical" },
-  "Digital Governance": { color: "#B45309", tint: "#FDF0E4", border: "#EFCFAC", label: "Digital Gov." },
+  Statistical: { color: "#1B5CB8", tint: "#E8F0FA", border: "#B9CFEC", label: "Statistical" },
+  Technical: { color: "#0F766E", tint: "#E4F2F0", border: "#B0D8D1", label: "Technical" },
+  "Digital Governance": { color: "#9D2449", tint: "#FBEAEE", border: "#EDC3CE", label: "Digital Gov." },
   Behavioural: { color: "#15803D", tint: "#EBF5EE", border: "#BBDEC7", label: "Behavioural" },
 };
 
 export const SRC = {
-  iGOT: { source: "iGOT Karmayogi", srcColor: "#1F5AA6", srcTint: "#EAF0F8", srcBorder: "#B9CCE5", srcFg: "#14396B", cta: "Enrol on iGOT" },
-  NSSTA: { source: "NSSTA / TPAC", srcColor: "#6D28D9", srcTint: "#F2EDFB", srcBorder: "#CDBDEC", srcFg: "#4C1D95", cta: "Apply for intake" },
+  iGOT: { source: "iGOT Karmayogi", srcColor: "#1B5CB8", srcTint: "#E8F0FA", srcBorder: "#B9CFEC", srcFg: "#123E7C", cta: "Enrol on iGOT" },
+  NSSTA: { source: "NSSTA / TPAC", srcColor: "#E9761B", srcTint: "#FDF0E1", srcBorder: "#F3CFA6", srcFg: "#9A4A0B", cta: "Apply for intake" },
 };
 
 export const LOGIN = {
-  learner: { title: "Officer / Learner", initial: "O", color: "#1F5AA6", idLabel: "Employee ID or iGOT-registered email", idValue: "ISS-2016-0442", note: "Your competency profile, courses, learning path and assessments.", name: "Dr. Anandi R. Kulkarni", desig: "Deputy Director (Statistics), NSSO Pune", initials: "AK", roleLabel: "Officer", tint: "#EAF0F8", fg: "#14396B", border: "#B9CCE5" },
-  trainer: { title: "Trainer / Faculty", initial: "T", color: "#6D28D9", idLabel: "NSSTA faculty ID", idValue: "NSSTA-FAC-118", note: "Upload material, generate and approve items, run QR sessions.", name: "Prof. S. Venkatesan", desig: "Faculty, NSSTA Greater Noida", initials: "SV", roleLabel: "Trainer", tint: "#F2EDFB", fg: "#4C1D95", border: "#CDBDEC" },
-  admin: { title: "Administrator (DIID / HR)", initial: "A", color: "#B45309", idLabel: "DIID administrator ID", idValue: "DIID-ADM-004", note: "Workforce analytics, cohort heatmaps and reports. Aggregates only.", name: "Smt. R. Deshpande", desig: "Director, DIID Workforce Planning", initials: "RD", roleLabel: "Administrator", tint: "#FDF0E4", fg: "#9A3412", border: "#EFCFAC" },
+  learner: { title: "Officer / Learner", initial: "O", color: "#1B5CB8", idLabel: "Employee ID or iGOT-registered email", idValue: "ISS-2016-0442", note: "Your competency profile, courses, learning path and assessments.", name: "Dr. Anandi R. Kulkarni", desig: "Deputy Director (Statistics), NSSO Pune", initials: "AK", roleLabel: "Officer", tint: "#E8F0FA", fg: "#123E7C", border: "#B9CFEC" },
+  trainer: { title: "Trainer / Faculty", initial: "T", color: "#E9761B", idLabel: "NSSTA faculty ID", idValue: "NSSTA-FAC-118", note: "Upload material, generate and approve items, run QR sessions.", name: "Prof. S. Venkatesan", desig: "Faculty, NSSTA Greater Noida", initials: "SV", roleLabel: "Trainer", tint: "#FDF0E1", fg: "#9A4A0B", border: "#F3CFA6" },
+  admin: { title: "Administrator (DIID / HR)", initial: "A", color: "#9D2449", idLabel: "DIID administrator ID", idValue: "DIID-ADM-004", note: "Workforce analytics, cohort heatmaps and reports. Aggregates only.", name: "Smt. R. Deshpande", desig: "Director, DIID Workforce Planning", initials: "RD", roleLabel: "Administrator", tint: "#FDF0E4", fg: "#9A3412", border: "#EFCFAC" },
 };
 
 export const TARGETS = [
@@ -187,10 +187,10 @@ export const HEAT = [
 export const RAMP = [["#FDF4E7", "#7A4A12"], ["#F8E1BE", "#6B3D0C"], ["#EFC086", "#5A320A"], ["#DC8F4C", "#3F2206"], ["#B0531F", "#FFFFFF"]];
 
 export const EFFECT = [
-  { name: "Advanced Sampling Techniques", source: "NSSTA", n: "412", lift: "0.82", pct: "82%", color: "#0E7490" },
-  { name: "Python for Official Statistics", source: "iGOT", n: "2,914", lift: "0.71", pct: "71%", color: "#6D28D9" },
-  { name: "National Accounts — Advanced", source: "NSSTA", n: "288", lift: "0.64", pct: "64%", color: "#0E7490" },
-  { name: "Cyber Hygiene for Officials", source: "iGOT", n: "6,102", lift: "0.38", pct: "38%", color: "#B45309" },
+  { name: "Advanced Sampling Techniques", source: "NSSTA", n: "412", lift: "0.82", pct: "82%", color: "#1B5CB8" },
+  { name: "Python for Official Statistics", source: "iGOT", n: "2,914", lift: "0.71", pct: "71%", color: "#0F766E" },
+  { name: "National Accounts — Advanced", source: "NSSTA", n: "288", lift: "0.64", pct: "64%", color: "#1B5CB8" },
+  { name: "Cyber Hygiene for Officials", source: "iGOT", n: "6,102", lift: "0.38", pct: "38%", color: "#9D2449" },
   { name: "Leadership in Public Systems", source: "iGOT", n: "1,744", lift: "0.29", pct: "29%", color: "#15803D" },
 ];
 
@@ -208,6 +208,13 @@ export const REPORTS = [
   { name: "State DES capacity assessment", period: "Aug 2026", owner: "DIID", status: "Scheduled 30 Sep", format: "XLSX" },
   { name: "Emerging skill demand forecast", period: "24-month horizon", owner: "DIID", status: "Draft — AI forecast", format: "PDF" },
   { name: "Mandatory-course compliance register", period: "Rolling", owner: "HR Division", status: "Ready", format: "XLSX" },
+];
+
+export const SESSIONS = [
+  { id: "NSSTA-8841", name: "Sampling Methodology — Batch 41", quiz: "Sampling Methodology, Module 4", items: "14 items · MCQ", course: "Advanced Sampling Techniques for Large-Scale Household Surveys", src: "NSSTA", venue: "NSSTA Greater Noida · Room 2B", when: "Today, 16:00–17:30 IST", expires: "Closes 17:30 IST", joined: 18, total: 32, status: "Live", seed: 7717 },
+  { id: "NSSTA-8827", name: "Estimation & Weighting — Batch 40", quiz: "Estimation Procedures in Sample Surveys", items: "20 items · MCQ + short answer", course: "Weighting, Calibration & Variance Estimation", src: "NSSTA", venue: "NSSTA Greater Noida · Lab 1", when: "2 September, 10:00–11:00 IST", expires: "Closed 2 Sep", joined: 29, total: 30, status: "Closed", seed: 4413 },
+  { id: "DESMH-114", name: "State DES Maharashtra — GSDP workshop", quiz: "National Accounts fundamentals", items: "12 items · MCQ", course: "National Accounts Compilation — SNA 2008 Framework", src: "NSSTA", venue: "Mumbai · DES Headquarters", when: "12 September, 11:00–12:00 IST", expires: "Opens 12 Sep", joined: 0, total: 45, status: "Scheduled", seed: 9182 },
+  { id: "IGOT-2210", name: "Python level check — NSO technical pool", quiz: "Python & SQL for official statistics", items: "24 items · adaptive", course: "Python for Official Statistics — Levels 1 to 3", src: "iGOT", venue: "Online · self-join window", when: "Open until 20 September", expires: "Closes 20 Sep", joined: 112, total: 180, status: "Live", seed: 5521 },
 ];
 
 export const FLOW = [
