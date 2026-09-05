@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { css } from "../lib/css";
+import { checkHealth, API_BASE_URL } from "../lib/api";
 
 const PARTNERS = [
   ["MoSPI", "MINISTRY OF STATISTICS"],
@@ -9,6 +11,23 @@ const PARTNERS = [
 ];
 
 export default function Footer({ v }) {
+  // Real connectivity check, not just asserted — a genuine call to the backend so a broken
+  // API isn't silently indistinguishable from a working one on pages that don't otherwise
+  // surface network errors.
+  const [backendStatus, setBackendStatus] = useState("checking");
+  useEffect(() => {
+    let cancelled = false;
+    checkHealth()
+      .then(() => { if (!cancelled) setBackendStatus("ok"); })
+      .catch(() => { if (!cancelled) setBackendStatus("unreachable"); });
+    return () => { cancelled = true; };
+  }, []);
+  const backendLabel =
+    backendStatus === "checking" ? `Checking backend at ${API_BASE_URL}…`
+      : backendStatus === "ok" ? `Backend connected (${API_BASE_URL})`
+      : `Backend unreachable (${API_BASE_URL})`;
+  const backendColor = backendStatus === "ok" ? "#8FD6A8" : backendStatus === "unreachable" ? "#F3A6A6" : "#AFC6E6";
+
   return (
     <footer style={css("background:#123E7C; color:#D3E1F3")}>
       <div style={css("max-width:1500px; margin:0 auto; padding:40px 32px 20px; display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:32px")}>
@@ -72,6 +91,7 @@ export default function Footer({ v }) {
         <div style={css("max-width:1500px; margin:0 auto; padding:14px 32px; display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; font-size:11.5px; color:#AFC6E6")}>
           <span>© 2026 Ministry of Statistics &amp; Programme Implementation, Government of India.</span>
           <span>Last updated: 4 September 2026 · v1.0 (pre-production) · Multilingual &amp; assistant layer: Sarvam AI · <a href="/live-demo" style={css("color:#AFC6E6; text-decoration:underline")}>Live backend demo →</a></span>
+          <span style={css(`color:${backendColor}; font-family:'IBM Plex Mono',monospace; font-size:10.5px`)}>{backendLabel}</span>
         </div>
       </div>
     </footer>

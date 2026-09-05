@@ -7,57 +7,37 @@ export default function AssessmentsHub({ v }) {
       <div style={css("font-size:13.5px; color:#5A6472; margin-bottom:20px")}>Your baseline, job simulations assigned by your controlling authority, and trainer-run quizzes you can join by QR.</div>
       <div style={css("display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr)); gap:20px; align-items:start")}>
         <div style={css("display:grid; gap:14px")}>
-          {v.assessed && (
+          {v.diagCompleted && (
             <div style={css("background:#fff; border:1px solid #E3E9F2; border-left:4px solid #166534; padding:18px 20px; display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap")}>
               <div style={css("min-width:220px; flex:1")}>
                 <div style={css("display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap")}>
                   <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#166534; background:#EBF5EE; border:1px solid #BBDEC7")}>Completed</span>
-                  <span style={css("font-size:11.5px; color:#7A8492")}>{v.assessedOn}</span>
                 </div>
-                <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Baseline competency assessment — {v.targetName}</div>
-                <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>{v.itemTotal} items · mean assessed level {v.meanLevel} / 5. Feeds your gap map and learning path.</div>
+                <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Baseline Diagnostic</div>
+                <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>Score {v.diagScore}% {v.diagPassedLabel}</div>
               </div>
               <div style={css("display:grid; gap:8px")}>
                 <button onClick={v.goReview} style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:11px 16px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>View feedback</button>
-                <button onClick={v.retakeAssessment} style={css("font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; padding:11px 16px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Retake</button>
+                <button onClick={v.startDiagnostic} style={css("font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; padding:11px 16px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Retake</button>
               </div>
             </div>
           )}
-          {v.notAssessed && (
+          {!v.diagCompleted && (
             <div style={css("background:#fff; border:1px solid #F58220; border-left:4px solid #F58220; padding:18px 20px; display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap")}>
               <div style={css("min-width:220px; flex:1")}>
                 <div style={css("display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap")}>
                   <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#7A4A12; background:#FDF4E7; border:1px solid #EFCFAC")}>Not started</span>
-                  <span style={css("font-size:11.5px; color:#7A8492")}>20 minutes · 8 items</span>
+                  <span style={css("font-size:11.5px; color:#7A8492")}>30 minutes · 8 items</span>
                 </div>
-                <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Baseline competency assessment — {v.targetName}</div>
-                <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>MCQs, two job simulations and one written judgement question. Unlocks your gap map, ranked gaps and sequenced learning path.</div>
+                <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Baseline Diagnostic</div>
+                <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>Onboarding MCQ set across all 4 competency domains.</div>
               </div>
-              <button onClick={v.startAssessment} style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:12px 18px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>Start now</button>
+              <button onClick={v.startDiagnostic} style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:12px 18px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>Start now</button>
             </div>
           )}
-          <div style={css("background:#fff; border:1px solid #E3E9F2; padding:18px 20px; display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap")}>
-            <div style={css("min-width:220px; flex:1")}>
-              <div style={css("display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap")}>
-                <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#1B5CB8; background:#E8F0FA; border:1px solid #B9CFEC")}>Statistical</span>
-                <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#9A3412; background:#FDF0E4; border:1px solid #EFCFAC")}>Branching simulation</span>
-              </div>
-              <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Household survey data-quality investigation</div>
-              <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>A suspicious HCES schedule batch arrives from a field team. Decide what to verify, whom to escalate to, and whether to reject the block. 6 decision points · 35 min.</div>
-            </div>
-            <button style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:11px 16px; border:1px solid #123E7C; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Begin</button>
-          </div>
-          <div style={css("background:#fff; border:1px solid #E3E9F2; padding:18px 20px; display:flex; justify-content:space-between; gap:14px; align-items:center; flex-wrap:wrap")}>
-            <div style={css("min-width:220px; flex:1")}>
-              <div style={css("display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap")}>
-                <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#0F766E; background:#E4F2F0; border:1px solid #B0D8D1")}>Technical</span>
-                <span style={css("font-size:10.5px; font-weight:700; padding:3px 7px; border-radius:6px; color:#3B424E; background:#F1F3F6; border:1px solid #DDE1E7")}>Adaptive · 24 items</span>
-              </div>
-              <div style={css("font-size:15.5px; font-weight:700; color:#123E7C")}>Python &amp; SQL for official statistics — level check</div>
-              <div style={css("font-size:12.5px; color:#5A6472; margin-top:4px; line-height:1.5")}>Focused re-assessment of a single domain. Updates only the Technical axis of your gap map.</div>
-            </div>
-            <button style={css("font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; padding:11px 16px; border:1px solid #123E7C; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Start</button>
-          </div>
+          {v.diagLoadError && (
+            <div style={css("padding:12px 14px; border:1px solid #EBC4C4; background:#FBECEC; color:#991B1B; font-size:12.5px; border-radius:8px")}>Could not load the diagnostic assessment: {v.diagLoadError}</div>
+          )}
         </div>
         <div style={css("display:grid; gap:20px")}>
           <div style={css("background:#fff; border:1px dashed #B9C4D2; padding:22px; display:grid; gap:14px; justify-items:center; text-align:center")}>

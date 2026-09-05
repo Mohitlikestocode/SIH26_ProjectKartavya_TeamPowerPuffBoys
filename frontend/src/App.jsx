@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
-import { uploadDocument, generateForDocument } from "./lib/api";
+import { uploadDocument, generateForDocument, api, ApiError } from "./lib/api";
 import {
   D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
   CATALOGUE, INPROGRESS, CERTS, HEAT, RAMP, EFFECT, EMERGING,
@@ -51,6 +51,14 @@ const initialState = {
   uploadFile: null, uploadStatus: "idle", uploadedDoc: null, uploadError: null,
   generateStatus: "idle", generateResult: null, generateError: null,
   session: 0,
+  // Real diagnostic-attempt flow (the one real assessment endpoint that exists — see
+  // MCQ_CONTRACT_PROPOSAL.md / the Phase-3-was-replaced context). authToken/authUser come from a
+  // real POST /api/auth/login call made at sign-in time using the seeded demo credentials for
+  // whichever role tab is selected — the rest of the app stays the pre-existing mock either way.
+  authToken: null, authUser: null, authError: null,
+  diagAssessment: null, diagLoadError: null, diagLoading: false,
+  attempt: null, attemptAnswers: {}, runnerCursor: 0,
+  attemptSubmitting: false, attemptSubmitError: null, attemptResult: null,
 };
 
 function levels(state) {
@@ -247,10 +255,137 @@ export default function App() {
     return { fg: on ? "#fff" : "#41506B", border: on ? "#123E7C" : "#C9D6E8", bg: on ? "#123E7C" : "#fff", w: on ? "700" : "600" };
   };
   const tl = tab("learner"), tt = tab("trainer"), ta = tab("admin");
+  // Seeded demo accounts (backend/prisma/seed/index.ts: "3 demo users, password: password123").
+  // The mock sign-in screen has no real email/password inputs (they're readonly placeholders), so
+  // this maps the selected role tab straight to its matching seeded account rather than adding
+  // real credential fields to a screen that's otherwise still the design-fidelity mock.
+  const DEMO_LOGIN_EMAIL = { learner: "learner@kartavya.gov.in", trainer: "trainer@kartavya.gov.in", admin: "admin@kartavya.gov.in" };
   const signIn = () => {
     const r = st.loginTab;
     setState({ role: r, acct: false, prefs: false, screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics" });
+    api.login(DEMO_LOGIN_EMAIL[r], "password123")
+      .then(({ token, user }) => {
+        setState({ authToken: token, authUser: user, authError: null });
+        loadEmployeeDashboard(token);
+      })
+      .catch((err) => setState({ authToken: null, authUser: null, authError: err.message }));
   };
+
+  // Real diagnostic-attempt flow. GET /api/assessments/diagnostic + POST /api/attempts (which
+  // resumes an in_progress attempt or creates a fresh one — the backend has no separate "retake"
+  // endpoint, calling this again after a submitted attempt just makes a new one).
+  const startDiagnostic = () => {
+    const token = st.authToken;
+    setState({
+      screen: "runner", runnerCursor: 0, attemptAnswers: {}, attemptResult: null,
+      attemptSubmitError: null, diagLoadError: null, diagLoading: true,
+    });
+    if (!token) {
+      setState({ diagLoading: false, diagLoadError: st.authError || "Not signed in." });
+      return;
+    }
+    api.getDiagnostic(token)
+      .then((assessment) => {
+        setState({ diagAssessment: assessment, diagLoading: false });
+        return api.startAttempt(token, assessment.id);
+      })
+      .then((attempt) => setState({ attempt }))
+      .catch((err) => setState({ diagLoading: false, diagLoadError: err.message }));
+  };
+
+  // There is no per-answer save endpoint (see the confirmed API surface) — answers accumulate
+  // here in local state and go out in one shot on final submit.
+  const selectDiagAnswer = (questionId, selectedIndex) =>
+    setState((s) => ({ attemptAnswers: { ...s.attemptAnswers, [questionId]: selectedIndex } }));
+
+  const submitDiagnostic = () => {
+    const token = st.authToken;
+    const attemptId = st.attempt?.id;
+    if (!token || !attemptId) return;
+    const answers = Object.entries(st.attemptAnswers).map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }));
+    setState({ attemptSubmitting: true, attemptSubmitError: null, screen: "scoring" });
+    api.submitAttempt(token, attemptId, answers)
+      .then((result) => {
+        setState({ attemptSubmitting: false, attemptResult: result, screen: "lresult" });
+        loadEmployeeDashboard(token); // refresh the real gap map with this attempt's blended scores
+        // submitAttempt's own response doesn't embed the assessment (no correctIndex) — the
+        // revealed shape only comes back from GET /api/attempts/:id once status !== in_progress.
+        // Follow up to get it so Result.jsx can show the correct answer even when a question has
+        // no explanations (true for all current stub content). Best-effort: if this follow-up
+        // fails, results just falls back to the pre-submission (redacted) question copy rather
+        // than failing the submission itself.
+        api.getAttempt(token, attemptId)
+          .then((attempt) => {
+            if (attempt?.assessment?.questions) setState({ diagAssessment: attempt.assessment });
+          })
+          .catch(() => {});
+      })
+      .catch((err) => setState({ attemptSubmitting: false, attemptSubmitError: err.message, screen: "runner" }));
+  };
+
+  // Real GET /api/dashboards/employee — replaces the frozen mock gap map (Dashboard.jsx) with
+  // getGapMap()'s persistent, role-requirement-based computation, itself fed by
+  // UserCompetencyScore rows that feedCompetencyScores() blends in on every real submitted
+  // attempt. Called once after login and again after every real submission so the numbers are
+  // never more than one action stale.
+  const loadEmployeeDashboard = (token) => {
+    api.getEmployeeDashboard(token)
+      .then((dash) => setState({ employeeDashboard: dash, employeeDashboardError: null }))
+      .catch((err) => setState({ employeeDashboard: null, employeeDashboardError: err.message }));
+  };
+
+  // getGapMap()'s domain/current/required/gap are on a 0-100 scale (UserCompetencyScore.level /
+  // RoleCompetencyRequirement.requiredLevel); the existing radar chart + domain cards were built
+  // for 0-5 (R=150 radius, "X.X" formatting). Dividing by 20 is a pure unit conversion — it
+  // preserves every ratio/relative-gap exactly, just recalibrates to the chart's existing scale
+  // rather than reworking the SVG geometry for a 0-100 axis.
+  const REAL_SCALE = 20;
+  // "Behavioural" (this app's canonical 4-domain key, used by the SVG's fixed corner order and
+  // DOM/SUBS lookups) vs "Behavioural/Managerial" (the real seeded CompetencyDomain name) — same
+  // domain, different string, only mismatch between the two naming schemes.
+  const REAL_DOMAIN_NAME = { Statistical: "Statistical", Technical: "Technical", "Digital Governance": "Digital Governance", Behavioural: "Behavioural/Managerial" };
+  const realGapMap = st.employeeDashboard?.gapMap ?? [];
+  const realGapMapByDomain = Object.fromEntries(realGapMap.map((g) => [g.domain, g]));
+  const realDomainGap = (mockDomainName) => realGapMapByDomain[REAL_DOMAIN_NAME[mockDomainName]] ?? { current: 0, required: 0, gap: 0 };
+
+  const realCurPoints = D.map((d, i) => pt(i, realDomainGap(d).current / REAL_SCALE)).join(" ");
+  const realReqPoints = D.map((d, i) => pt(i, realDomainGap(d).required / REAL_SCALE)).join(" ");
+  const realDomainCards = D.map((d) => {
+    const rg = realDomainGap(d);
+    const cur = rg.current / REAL_SCALE, req = rg.required / REAL_SCALE, g = rg.gap / REAL_SCALE;
+    return {
+      label: d, color: DOM[d].color, cur: cur.toFixed(1), req: req.toFixed(1),
+      gapColor: g >= 1.2 ? "#9A3412" : g > 0.4 ? "#B45309" : "#166534",
+      gapText: g <= 0.15 ? "At required level" : "Gap of " + g.toFixed(1) + " to close",
+    };
+  });
+  const realGapIndexNum = D.reduce((sum, d) => sum + realDomainGap(d).gap / REAL_SCALE, 0) / 4;
+
+  const realSubGaps = realGapMap.flatMap((dg) =>
+    dg.subSkills.map((s) => ({ ...s, mockDomainKey: Object.keys(REAL_DOMAIN_NAME).find((k) => REAL_DOMAIN_NAME[k] === dg.domain) ?? dg.domain })),
+  );
+  realSubGaps.sort((a, b) => b.gap - a.gap);
+  const realGaps = realSubGaps.slice(0, 6).map((s, i) => {
+    const domMeta = DOM[s.mockDomainKey] ?? { color: "#5A6472", tint: "#F1F3F6", border: "#DDE1E7", label: s.domain };
+    return {
+      rank: String(i + 1).padStart(2, "0"), name: s.subSkill, domain: domMeta.label ?? s.domain,
+      gap: (s.gap / REAL_SCALE).toFixed(1), readout: (s.current / REAL_SCALE).toFixed(1) + " / " + (s.required / REAL_SCALE).toFixed(1),
+      barPct: Math.max(4, Math.min(100, (s.gap / REAL_SCALE) / 3 * 100)).toFixed(0) + "%",
+      color: domMeta.color, tint: domMeta.tint, border: domMeta.border,
+    };
+  });
+  // "Assessed" now means "has a real submitted/kicked attempt on record" — gapMap itself is
+  // always non-empty once a target role is set (current defaults to 0 per sub-skill), so it can't
+  // be used as the "have they actually taken anything" signal.
+  const realAssessed = (st.employeeDashboard?.progressHistory?.length ?? 0) > 0;
+  const realTargetRoleTitle = st.employeeDashboard?.targetRole?.title ?? t.name;
+  const realProgressHistory = st.employeeDashboard?.progressHistory ?? [];
+  const realLastSubmittedAt = realProgressHistory.length
+    ? realProgressHistory[realProgressHistory.length - 1].submittedAt
+    : null;
+  const realAssessedOn = realLastSubmittedAt
+    ? new Date(realLastSubmittedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+    : "—";
 
   const v = {
     baseSize: (16 * st.scale).toFixed(1) + "px",
@@ -280,7 +415,7 @@ export default function App() {
     isSessions: st.screen === "tsessions", isAnalytics: st.screen === "oanalytics",
     isReports: st.screen === "oreports", isSystem: st.screen === "system",
     isHindi: st.lang === "HI",
-    assessed: st.assessed, notAssessed: !st.assessed,
+    assessed: realAssessed, notAssessed: !realAssessed,
     tabLearner: () => setState({ loginTab: "learner" }), tabTrainer: () => setState({ loginTab: "trainer" }), tabAdmin: () => setState({ loginTab: "admin" }),
     tabLFg: tl.fg, tabLBorder: tl.border, tabLW: tl.w, tabLBg: tl.bg,
     tabTFg: tt.fg, tabTBorder: tt.border, tabTW: tt.w, tabTBg: tt.bg,
@@ -290,15 +425,38 @@ export default function App() {
     onTargetSelect: (e) => setState({ target: parseInt(e.target.value, 10) }),
     targetIdx: String(st.target), targetName: t.name, targetTrack: t.track, targetNote: t.note,
     targetReqs: D.map((d, i) => ({ label: DOM[d].label, color: DOM[d].color, value: t.req[i].toFixed(1), pct: (t.req[i] / 5 * 100).toFixed(0) + "%" })),
-    curPoints, reqPoints, domainCards, gaps, stages, stageHeads,
-    gapIndex: gapIndexNum.toFixed(2),
-    gapBand: gapIndexNum >= 1.3 ? "Significant" : gapIndexNum >= 0.6 ? "Moderate" : "Minor",
-    gapBandColor: gapIndexNum >= 1.3 ? "#9A3412" : gapIndexNum >= 0.6 ? "#B45309" : "#166534",
-    meanLevel: meanLevelNum.toFixed(1), assessedOn: "4 September 2026",
+    curPoints: realCurPoints, reqPoints: realReqPoints, domainCards: realDomainCards, gaps: realGaps, stages, stageHeads,
+    gapIndex: realGapIndexNum.toFixed(2),
+    gapBand: realGapIndexNum >= 1.3 ? "Significant" : realGapIndexNum >= 0.6 ? "Moderate" : "Minor",
+    gapBandColor: realGapIndexNum >= 1.3 ? "#9A3412" : realGapIndexNum >= 0.6 ? "#B45309" : "#166534",
+    realTargetRoleTitle,
+    employeeDashboardError: st.employeeDashboardError,
+    meanLevel: meanLevelNum.toFixed(1), assessedOn: realAssessedOn,
     firstStepTitle: stages[0].items[0].title,
-    startAssessment: () => setState({ screen: "runner", cursor: 0 }),
-    retakeAssessment: () => setState({ screen: "runner", cursor: 0, answers: {}, essay: "", assessed: false }),
-    submitAssessment: () => { setState({ screen: "scoring" }); setTimeout(() => setState({ assessed: true, screen: "lresult" }), 1400); },
+    // Real diagnostic flow (replaces the old fake ITEMS-based startAssessment/retakeAssessment/
+    // submitAssessment). Known side effect, flagged rather than silently accepted: the OLD mock
+    // assessment (st.answers/st.essay-driven) was the only thing feeding Dashboard.jsx's gap map
+    // (domainCards/gapIndex/gaps, still computed above via levels()) — since this is now the only
+    // reachable "take the assessment" entry point and it no longer touches st.answers/st.essay at
+    // all, that gap map will stay at its static/zero mock state regardless of real diagnostic
+    // performance. Reconciling Dashboard.jsx with real perDomainScore/perSubSkillScore data is a
+    // separate, out-of-scope piece of work.
+    startDiagnostic, submitDiagnostic,
+    diagLoading: st.diagLoading, diagLoadError: st.diagLoadError,
+    diagQuestions: st.diagAssessment?.questions ?? [],
+    diagCursor: st.runnerCursor,
+    diagAnswers: st.attemptAnswers,
+    selectDiagAnswer,
+    diagGoPrev: () => setState((s) => ({ runnerCursor: Math.max(0, s.runnerCursor - 1) })),
+    diagGoNext: () => setState((s) => ({ runnerCursor: Math.min((s.diagAssessment?.questions?.length ?? 1) - 1, s.runnerCursor + 1) })),
+    diagGoToIndex: (i) => setState({ runnerCursor: i }),
+    attemptSubmitting: st.attemptSubmitting, attemptSubmitError: st.attemptSubmitError,
+    diagResult: st.attemptResult,
+    diagCompleted: !!st.attemptResult,
+    diagScore: st.attemptResult ? st.attemptResult.score : 0,
+    diagPassedLabel:
+      !st.attemptResult || st.attemptResult.passed === null ? "· no pass/fail threshold set"
+        : st.attemptResult.passed ? "· Passed" : "· Not passed",
     itemNo: String(st.cursor + 1), itemTotal: String(ITEMS.length), answeredCount: String(answeredCount),
     runnerPct: (answeredCount / ITEMS.length * 100).toFixed(0) + "%",
     itemDomain: item.domain, itemColor: DOM[item.domain].color, itemTint: DOM[item.domain].tint, itemBorder: DOM[item.domain].border,

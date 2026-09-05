@@ -119,11 +119,14 @@ export const api = {
   login: (email, password) => request("/api/auth/login", { method: "POST", body: { email, password } }),
   me: (token) => request("/api/auth/me", { token }),
   createAssessment: (token, body) => request("/api/assessments", { method: "POST", token, body }),
+  getDiagnostic: (token) => request("/api/assessments/diagnostic", { token }),
   createSession: (token, body) => request("/api/sessions", { method: "POST", token, body }),
   getSession: (token, sessionId) => request(`/api/sessions/${sessionId}`, { token }),
   joinSession: (token, sessionId, joinToken) =>
     request(`/api/sessions/${sessionId}/join`, { method: "POST", token, body: { token: joinToken } }),
+  startAttempt: (token, assessmentId) => request("/api/attempts", { method: "POST", token, body: { assessmentId } }),
   getAttempt: (token, attemptId) => request(`/api/attempts/${attemptId}`, { token }),
+  getEmployeeDashboard: (token) => request("/api/dashboards/employee", { token }),
   submitAttempt: (token, attemptId, answers) =>
     request(`/api/attempts/${attemptId}/submit`, { method: "POST", token, body: { answers } }),
   logViolation: (token, attemptId, type) =>

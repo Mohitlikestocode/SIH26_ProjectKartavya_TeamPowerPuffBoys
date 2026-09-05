@@ -17,7 +17,7 @@ export default function Catalogue({ v }) {
       {v.notAssessed && (
         <div style={css("background:#FDF9F0; border:1px solid #EFCFAC; padding:14px 18px; margin-top:16px; display:flex; justify-content:space-between; gap:16px; align-items:center; flex-wrap:wrap")}>
           <div style={css("font-size:13.5px; color:#3B424E; line-height:1.55; flex:1; min-width:260px")}>You are browsing the full catalogue unranked. Take the 20-minute assessment and Kartavya will mark the courses that close <strong style={css("color:#123E7C")}>your</strong> gaps and sequence them into a path.</div>
-          <button onClick={v.startAssessment} style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:11px 18px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>Take the assessment</button>
+          <button onClick={v.startDiagnostic} style={css("font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; padding:11px 18px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>Take the assessment</button>
         </div>
       )}
 
