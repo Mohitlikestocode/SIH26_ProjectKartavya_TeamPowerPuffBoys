@@ -159,5 +159,6 @@ export function scoreLocalSimulation(graph, path) {
     perDomainScore: { [graph.domainTag]: terminal?.score ?? 0 },
     perSubSkillScore: { [graph.subSkillTag]: terminal?.score ?? 0 },
     status: "submitted",
+    passed: null, // no pass/fail threshold applies to a simulation outcome
   };
 }
