@@ -11,8 +11,8 @@ for why the two stages exist — that is the design this tool serves.
 | | Stage 1 — `broad` | Stage 2 — `specific` |
 |---|---|---|
 | Covers | every sub-skill the role requires | only the weakest sub-skills |
-| MCQ per sub-skill | 2 | 6 |
-| Written items per sub-skill | 0 | 1 |
+| MCQ per sub-skill | 2 | 4 |
+| Written items per sub-skill | 0 | 2 |
 | Default difficulty | intermediate | advanced |
 | Job | rank sub-skills weakest-first | measure, and localise the misconception |
 | Item style | one central idea, cleanly separates can/cannot | each distractor is a different failure mode |

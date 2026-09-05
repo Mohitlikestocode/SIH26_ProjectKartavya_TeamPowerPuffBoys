@@ -51,8 +51,14 @@ The item must cleanly separate "can apply this" from "cannot". A borderline lear
   },
   specific: {
     purpose: "Deep dive — few sub-skills, many items each, measures and localises the gap.",
-    itemsPerSkill: 6,
-    freeTextPerSkill: 1,
+    // 4 + 2, not 6 + 1. Four MCQ still give five distinguishable score levels,
+    // which is ample for a gap the recommendation engine only uses to rank
+    // courses — the ordering barely moves on a 15-point difference. The second
+    // written item buys something the MCQs cannot: a misconception nobody
+    // thought to write an option for. Same sitting length either way, since a
+    // written answer costs roughly six MCQs of a candidate's time.
+    itemsPerSkill: 4,
+    freeTextPerSkill: 2,
     difficulty: "advanced",
     intent: `This is a DIAGNOSTIC item for a learner already flagged weak in this sub-skill by a broad screening test. The goal is no longer to find out whether they are weak — it is to find out exactly HOW.
 

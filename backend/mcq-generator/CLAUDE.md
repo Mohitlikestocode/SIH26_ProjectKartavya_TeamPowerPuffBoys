@@ -19,8 +19,8 @@ STAGE 1 — BROAD          every sub-skill the role requires, ~2 items each
    │                     NOT a measurement: 2 items can only score 0/50/100
    ▼
 STAGE 2 — SPECIFIC       only the weakest sub-skills
-   │                     ~6 MCQ each        → MEASURE (deterministic)
-   │                     ~1 written each    → DIAGNOSE (rubric, not scored)
+   │                     ~4 MCQ each        → MEASURE (deterministic)
+   │                     ~2 written each    → DIAGNOSE (rubric, not scored)
    ▼
 gap = required − measured   →   course recommendations
 ```
