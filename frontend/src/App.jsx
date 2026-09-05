@@ -3,6 +3,7 @@ import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
 import { uploadDocument, generateForDocument, api } from "./lib/api";
 import LiveAssessmentRunner from "./pages/LiveAssessmentRunner";
+import { buildLocalDiagnostic, scoreLocalDiagnostic, scoreLocalSimulation, LOCAL_SIMULATION } from "./lib/localAssessments";
 import {
   D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
   CATALOGUE, INPROGRESS, CERTS, HEAT, RAMP, EFFECT, EMERGING,
@@ -299,11 +300,16 @@ export default function App() {
       .catch(() => {});
   };
 
+  // No-auth, no-backend fallback: whenever there's no token (this prototype phase has no backend
+  // deployed at all), both assessments run entirely client-side against localAssessments.js
+  // instead of erroring out with "Not signed in." — same UI, same screens, real backend used
+  // instead the moment one is actually reachable (see signIn() above).
   const startSimulation = () => {
     const token = st.authToken;
     setState({ screen: "real-simulation", simLoadError: null, simLoading: true, simAssessment: null, simAttemptId: null });
     if (!token) {
-      setState({ simLoading: false, simLoadError: st.authError || "Not signed in." });
+      const localAssessment = { type: "simulation", title: LOCAL_SIMULATION.title, isProctored: false, scenario: LOCAL_SIMULATION };
+      setState({ simAssessment: localAssessment, simAttemptId: "local", simLoading: false });
       return;
     }
     api.getDefaultSimulation(token)
@@ -312,8 +318,11 @@ export default function App() {
       .catch((err) => setState({ simLoading: false, simLoadError: err.message }));
   };
 
-  const onSimulationSubmitted = () => {
-    setState({ simulationDone: true, screen: "lresult" });
+  const onSimulationSubmitted = (result) => {
+    // Result.jsx is diagnostic-shaped (per-question results[]), which a simulation doesn't have —
+    // it still renders sensibly off just perDomainScore/perSubSkillScore/score, so it's reused
+    // here rather than building a second results page for one extra assessment type.
+    setState({ simulationDone: true, attemptResult: result, screen: "lresult" });
     if (st.authToken) loadEmployeeDashboard(st.authToken); // simulation feeds competency scores too
   };
 
@@ -327,7 +336,7 @@ export default function App() {
       attemptSubmitError: null, diagLoadError: null, diagLoading: true,
     });
     if (!token) {
-      setState({ diagLoading: false, diagLoadError: st.authError || "Not signed in." });
+      setState({ diagAssessment: buildLocalDiagnostic(), attempt: { id: "local" }, diagLoading: false });
       return;
     }
     api.getDiagnostic(token)
@@ -347,9 +356,16 @@ export default function App() {
   const submitDiagnostic = () => {
     const token = st.authToken;
     const attemptId = st.attempt?.id;
-    if (!token || !attemptId) return;
+    if (!attemptId) return;
     const answers = Object.entries(st.attemptAnswers).map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }));
     setState({ attemptSubmitting: true, attemptSubmitError: null, screen: "scoring" });
+
+    if (!token) {
+      const result = scoreLocalDiagnostic(st.diagAssessment, st.attemptAnswers);
+      setTimeout(() => setState({ attemptSubmitting: false, attemptResult: result, screen: "lresult" }), 1000);
+      return;
+    }
+
     api.submitAttempt(token, attemptId, answers)
       .then((result) => {
         setState({ attemptSubmitting: false, attemptResult: result, screen: "lresult" });
@@ -423,7 +439,9 @@ export default function App() {
   // "Assessed" now means "has a real submitted/kicked attempt on record" — gapMap itself is
   // always non-empty once a target role is set (current defaults to 0 per sub-skill), so it can't
   // be used as the "have they actually taken anything" signal.
-  const realAssessed = (st.employeeDashboard?.progressHistory?.length ?? 0) > 0;
+  // With no backend (this prototype phase), employeeDashboard never loads — "assessed" instead
+  // reflects the local, in-session mock diagnostic result so the dashboard still unlocks properly.
+  const realAssessed = (st.employeeDashboard?.progressHistory?.length ?? 0) > 0 || (!st.authToken && !!st.attemptResult);
   const realTargetRoleTitle = st.employeeDashboard?.targetRole?.title ?? t.name;
   const realProgressHistory = st.employeeDashboard?.progressHistory ?? [];
   const realLastSubmittedAt = realProgressHistory.length
@@ -637,6 +655,7 @@ export default function App() {
                   attemptId={st.simAttemptId}
                   token={st.authToken}
                   onSubmitted={onSimulationSubmitted}
+                  localScorer={(path) => scoreLocalSimulation(LOCAL_SIMULATION, path)}
                 />
               )}
             </div>
