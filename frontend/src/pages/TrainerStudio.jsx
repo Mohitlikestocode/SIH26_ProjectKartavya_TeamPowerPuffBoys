@@ -212,7 +212,10 @@ export default function TrainerStudio({ v }) {
 
   useEffect(() => { loadPage(1); }, []);
 
-  const removeFromList = (id) => setQuestions((prev) => prev.filter((q) => q.id !== id));
+  const removeFromList = (id) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id));
+    setTotal((t) => Math.max(0, t - 1));
+  };
 
   const doApprove = (id) => {
     setRowErrors((e) => ({ ...e, [id]: null }));
