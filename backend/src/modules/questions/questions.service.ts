@@ -302,6 +302,7 @@ export async function setQuestionStatus(
   reason?: string
 ): Promise<Question> {
   const existing = await getQuestion(id);
+  if (existing.status === status) return existing;
 
   const [updated] = await prisma.$transaction([
     prisma.question.update({ where: { id }, data: { status } }),
@@ -317,4 +318,3 @@ export async function setQuestionStatus(
   ]);
 
   return updated;
-}
