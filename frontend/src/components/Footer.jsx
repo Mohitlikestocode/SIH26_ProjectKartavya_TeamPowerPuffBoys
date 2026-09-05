@@ -71,7 +71,7 @@ export default function Footer({ v }) {
       <div style={css("border-top:1px solid #2C5A9E")}>
         <div style={css("max-width:1500px; margin:0 auto; padding:14px 32px; display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; font-size:11.5px; color:#AFC6E6")}>
           <span>© 2026 Ministry of Statistics &amp; Programme Implementation, Government of India.</span>
-          <span>Last updated: 4 September 2026 · v1.0 (pre-production) · Multilingual &amp; assistant layer: Sarvam AI</span>
+          <span>Last updated: 4 September 2026 · v1.0 (pre-production) · Multilingual &amp; assistant layer: Sarvam AI · <a href="/live-demo" style={css("color:#AFC6E6; text-decoration:underline")}>Live backend demo →</a></span>
         </div>
       </div>
     </footer>
