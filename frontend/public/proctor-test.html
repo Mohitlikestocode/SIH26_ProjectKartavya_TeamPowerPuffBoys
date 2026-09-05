@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kartavya — Proctoring Test Harness</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0B0E14; color: #E7ECF3;
+    font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 20px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; color: #fff; }
+  .sub { color: #8A93A6; font-size: 12.5px; margin-bottom: 18px; text-align: center; max-width: 640px; }
+  .layout { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 1100px; }
+  .stage { position: relative; width: 640px; max-width: 100%; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid #232838; }
+  video, canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+  video { transform: none; }
+  .stage-inner { position: relative; width: 100%; aspect-ratio: 4/3; }
+  .banner {
+    position: absolute; top: 0; left: 0; right: 0; padding: 10px 14px; font-weight: 700; font-size: 13.5px;
+    background: rgba(198,40,40,0.92); color: #fff; transform: translateY(-100%); transition: transform .25s ease;
+    z-index: 5;
+  }
+  .banner.show { transform: translateY(0); }
+  .terminated {
+    position: absolute; inset: 0; background: rgba(10,10,14,0.94); display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px; z-index: 10; text-align: center; padding: 20px;
+  }
+  .terminated.show { display: flex; }
+  .terminated h2 { color: #FF6B6B; margin: 0; font-size: 22px; }
+  .controls { padding: 12px 14px; display: flex; gap: 8px; flex-wrap: wrap; background: #12151F; border-top: 1px solid #232838; }
+  button {
+    font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 9px 14px;
+    border: 1px solid #2C3448; background: #1A1F2E; color: #E7ECF3; border-radius: 7px;
+  }
+  button:hover:not(:disabled) { background: #232A3C; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.primary { background: #1B5CB8; border-color: #1B5CB8; }
+  button.primary:hover:not(:disabled) { background: #2468C9; }
+  .panel { width: 380px; max-width: 100%; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: #12151F; border: 1px solid #232838; border-radius: 10px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; color: #8A93A6; }
+  .score-row { display: flex; align-items: baseline; gap: 8px; }
+  .score-num { font-size: 28px; font-weight: 700; color: #fff; }
+  .score-of { color: #8A93A6; font-size: 13px; }
+  .status-line { font-size: 12.5px; color: #B7C0D1; margin-top: 6px; }
+  .log { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .log-item { display: flex; justify-content: space-between; gap: 8px; padding: 7px 9px; border-radius: 6px; background: #1A1F2E; font-size: 12px; }
+  .log-item .type { font-weight: 700; }
+  .log-empty { color: #5C6478; font-size: 12.5px; padding: 6px 0; }
+  .w2 { color: #FF8A65; }
+  .w1 { color: #FFD54F; }
+  details { font-size: 12px; color: #8A93A6; }
+  details input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid #2C3448; background: #0B0E14; color: #E7ECF3; width: 100%; margin-top: 4px; }
+  details label { display: block; margin-top: 8px; }
+  code { background: #1A1F2E; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Proctoring Test Harness</h1>
+<p class="sub">
+  Standalone test page for the Phase 3 proctoring logic — <b>coco-ssd</b> (phone detection),
+  <b>face-api.js</b> (face count + look-away via head-pose), and tab/fullscreen listeners.
+  Runs entirely in this browser tab; wiring to a live backend attempt is optional (see "Connect to backend" below).
+</p>
+
+<div class="layout">
+  <div class="stage">
+    <div class="stage-inner">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div class="banner" id="banner"></div>
+      <div class="terminated" id="terminated">
+        <h2>Test terminated</h2>
+        <div>Weighted violation count reached the kick threshold (3), matching the backend's <code>forceKick</code> logic.</div>
+        <button class="primary" id="resetBtn">Reset demo</button>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="primary" id="startBtn" disabled>Loading models…</button>
+      <button id="fullscreenBtn" disabled>Enter fullscreen</button>
+      <button id="resetBtn2" disabled>Reset</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>Weighted violations</h3>
+      <div class="score-row"><span class="score-num" id="scoreNum">0</span><span class="score-of">/ 3 (kick threshold)</span></div>
+      <div class="status-line" id="statusLine">Loading detection models…</div>
+    </div>
+    <div class="card">
+      <h3>How to trigger each check</h3>
+      <div class="status-line">
+        📱 Hold a phone up to the camera → <b>phone_detected</b> (weight 2)<br/>
+        🙈 Step out of frame → <b>no_face</b> (weight 1)<br/>
+        👥 Get a second person in frame → <b>multiple_faces</b> (weight 2)<br/>
+        👀 Turn your head fully left/right → <b>looking_away</b> (weight 1, mapped to <code>no_face</code> on the backend)<br/>
+        🪟 Switch tabs / minimize → <b>tab_switch</b> (weight 1)<br/>
+        ⛶ Click "Enter fullscreen" then press Esc → <b>fullscreen_exit</b> (weight 1)
+      </div>
+    </div>
+    <div class="card">
+      <h3>Violation log</h3>
+      <div class="log" id="log"><div class="log-empty">Nothing logged yet.</div></div>
+    </div>
+    <div class="card">
+      <details>
+        <summary>Connect to a live backend attempt (optional)</summary>
+        <label>API base <input id="apiBase" placeholder="http://localhost:4000" /></label>
+        <label>Attempt ID <input id="attemptId" placeholder="cl..." /></label>
+        <label>Bearer token <input id="authToken" placeholder="JWT from /api/auth/login" /></label>
+        <div class="status-line" style="margin-top:8px">
+          When filled in, every logged violation also <code>POST</code>s to
+          <code>{apiBase}/api/violations</code> with <code>{ attemptId, type }</code>. Leave blank to
+          run this page fully standalone.
+        </div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights";
+const KICK_THRESHOLD = 3;
+const WEIGHTS = { phone_detected: 2, multiple_faces: 2, no_face: 1, looking_away: 1, tab_switch: 1, fullscreen_exit: 1 };
+// The shared ViolationType enum (prisma schema) has no "looking_away" entry —
+// gaze-away events are reported to the backend as "no_face", the closest
+// existing type. Kept as a distinct label in this page's own UI/log.
+const BACKEND_TYPE = { looking_away: "no_face" };
+
+const video = document.getElementById("video");
+const overlay = document.getElementById("overlay");
+const ctx = overlay.getContext("2d");
+const banner = document.getElementById("banner");
+const terminated = document.getElementById("terminated");
+const startBtn = document.getElementById("startBtn");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
+const resetBtn = document.getElementById("resetBtn");
+const resetBtn2 = document.getElementById("resetBtn2");
+const scoreNum = document.getElementById("scoreNum");
+const statusLine = document.getElementById("statusLine");
+const logEl = document.getElementById("log");
+
+let phoneModel = null;
+let stream = null;
+let running = false;
+let kicked = false;
+let weightedCount = 0;
+let entries = [];
+const lastLogged = {};
+const COOLDOWN_MS = 4000;
+
+function setStatus(msg) { statusLine.textContent = msg; }
+
+function flashBanner(msg) {
+  banner.textContent = msg;
+  banner.classList.add("show");
+  clearTimeout(flashBanner._t);
+  flashBanner._t = setTimeout(() => banner.classList.remove("show"), 2600);
+}
+
+function renderLog() {
+  if (!entries.length) { logEl.innerHTML = '<div class="log-empty">Nothing logged yet.</div>'; return; }
+  logEl.innerHTML = entries.slice(0, 30).map(e => `
+    <div class="log-item">
+      <span><span class="type ${e.weight >= 2 ? "w2" : "w1"}">${e.type}</span> — ${e.msg}</span>
+      <span>${e.time}</span>
+    </div>`).join("");
+}
+
+async function postToBackend(uiType) {
+  const apiBase = document.getElementById("apiBase").value.trim();
+  const attemptId = document.getElementById("attemptId").value.trim();
+  const token = document.getElementById("authToken").value.trim();
+  if (!apiBase || !attemptId || !token) return;
+  const type = BACKEND_TYPE[uiType] ?? uiType;
+  try {
+    const res = await fetch(`${apiBase}/api/violations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ attemptId, type }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) flashBanner(`Backend rejected event: ${body.error ?? res.status}`);
+  } catch {
+    flashBanner("Could not reach backend — check API base URL");
+  }
+}
+
+function logViolation(type, msg) {
+  if (kicked) return;
+  const now = Date.now();
+  if (now - (lastLogged[type] || 0) < COOLDOWN_MS) return;
+  lastLogged[type] = now;
+
+  const weight = WEIGHTS[type] ?? 1;
+  weightedCount += weight;
+  entries.unshift({ type, msg, weight, time: new Date().toLocaleTimeString() });
+  renderLog();
+  flashBanner(`⚠ ${type.replace(/_/g, " ")} — ${msg}`);
+  scoreNum.textContent = String(weightedCount);
+  postToBackend(type);
+
+  if (weightedCount >= KICK_THRESHOLD) {
+    kicked = true;
+    terminated.classList.add("show");
+    setStatus("Attempt kicked (weighted count reached threshold).");
+  }
+}
+
+function resizeOverlay() {
+  overlay.width = video.videoWidth || 640;
+  overlay.height = video.videoHeight || 480;
+}
+
+async function loadModels() {
+  setStatus("Loading face-api models…");
+  await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+  setStatus("Loading coco-ssd (phone detection) model…");
+  phoneModel = await cocoSsd.load();
+  setStatus("Models ready. Click \"Start camera\".");
+  startBtn.disabled = false;
+  startBtn.textContent = "Start camera";
+}
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+  } catch {
+    setStatus("Camera permission denied or unavailable.");
+    return;
+  }
+  video.srcObject = stream;
+  await video.play();
+  resizeOverlay();
+  running = true;
+  startBtn.disabled = true;
+  startBtn.textContent = "Camera running";
+  fullscreenBtn.disabled = false;
+  setStatus("Watching for phone / face-count / gaze violations…");
+  faceLoop();
+  phoneLoop();
+}
+
+async function faceLoop() {
+  if (!running) return;
+  if (!kicked) {
+    try {
+      const results = await faceapi
+        .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 }))
+        .withFaceLandmarks();
+
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+      if (results.length === 0) {
+        logViolation("no_face", "No face detected in frame");
+      } else if (results.length > 1) {
+        logViolation("multiple_faces", `${results.length} faces detected in frame`);
+        results.forEach(r => drawBox(r.detection.box, "#FF8A65"));
+      } else {
+        const [{ detection, landmarks }] = results;
+        drawBox(detection.box, "#4CAF50");
+
+        const jaw = landmarks.getJawOutline();
+        const nose = landmarks.getNose();
+        const noseTip = nose[Math.floor(nose.length / 2)];
+        const leftEdge = jaw[0], rightEdge = jaw[jaw.length - 1];
+        const faceWidth = rightEdge.x - leftEdge.x;
+        const ratio = faceWidth > 0 ? (noseTip.x - leftEdge.x) / faceWidth : 0.5;
+
+        if (ratio < 0.32 || ratio > 0.68) {
+          logViolation("looking_away", `Head turned away from camera (nose ratio ${ratio.toFixed(2)})`);
+        }
+      }
+    } catch {
+      // transient detection error — skip this tick
+    }
+  }
+  setTimeout(faceLoop, 1200);
+}
+
+async function phoneLoop() {
+  if (!running) return;
+  if (!kicked && phoneModel) {
+    try {
+      const predictions = await phoneModel.detect(video);
+      const phone = predictions.find(p => p.class === "cell phone" && p.score > 0.5);
+      if (phone) {
+        drawBox({ x: phone.bbox[0], y: phone.bbox[1], width: phone.bbox[2], height: phone.bbox[3] }, "#E53935");
+        logViolation("phone_detected", `Phone detected (${Math.round(phone.score * 100)}% confidence)`);
+      }
+    } catch {
+      // transient detection error — skip this tick
+    }
+  }
+  setTimeout(phoneLoop, 4000);
+}
+
+function drawBox(box, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(box.x, box.y, box.width, box.height);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && running) logViolation("tab_switch", "Tab switched or window minimized");
+});
+
+document.addEventListener("fullscreenchange", () => {
+  if (!document.fullscreenElement && running && fullscreenBtn.dataset.wasFullscreen === "1") {
+    logViolation("fullscreen_exit", "Exited fullscreen during attempt");
+  }
+  fullscreenBtn.dataset.wasFullscreen = document.fullscreenElement ? "1" : "0";
+});
+
+fullscreenBtn.addEventListener("click", async () => {
+  await document.documentElement.requestFullscreen().catch(() => {});
+});
+
+function resetDemo() {
+  kicked = false;
+  weightedCount = 0;
+  entries = [];
+  Object.keys(lastLogged).forEach(k => delete lastLogged[k]);
+  scoreNum.textContent = "0";
+  renderLog();
+  terminated.classList.remove("show");
+  setStatus(running ? "Watching for phone / face-count / gaze violations…" : "Click \"Start camera\".");
+}
+resetBtn.addEventListener("click", resetDemo);
+resetBtn2.addEventListener("click", resetDemo);
+resetBtn2.disabled = false;
+
+startBtn.addEventListener("click", startCamera);
+
+loadModels().catch(() => setStatus("Failed to load detection models — check your network connection."));
+</script>
+</body>
+</html>
