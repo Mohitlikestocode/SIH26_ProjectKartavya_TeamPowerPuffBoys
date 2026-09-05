@@ -22,14 +22,22 @@ export class ApiError extends Error {
 }
 
 async function request(path, { method = "GET", token, body } = {}) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: "Bearer " + token } : {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: "Bearer " + token } : {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    // Without this, a network failure (e.g. VITE_API_BASE_URL not set at build time, so this
+    // still points at localhost:4000 in a deployed build) surfaces as a bare "Failed to fetch"
+    // with no indication of which URL it tried — same fix as apiFetch() below already has.
+    throw new ApiError(0, `Could not reach the backend at ${API_BASE_URL}: ${err.message}`);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, data.error || `Request failed (${res.status})`);
   return data;
@@ -114,6 +122,26 @@ export function createQuestion(payload) {
   return apiFetch("/api/questions", { method: "POST", body: payload, identityHeaders: "admin" });
 }
 
+// Trainer "create test -> QR" flow — same identity-header shortcut TrainerStudio.jsx already uses
+// (backend/src/middleware/resolveTrainerAuth.ts resolves x-admin-id against a real User row).
+// Include a `session` block in the payload to get {assessment, session, joinUrl, qrDataUrl} back
+// in one call instead of creating the assessment and the session as two separate steps.
+export function createMcqAssessment(payload) {
+  return apiFetch("/api/assessments/mcq", { method: "POST", body: payload, identityHeaders: "admin" });
+}
+
+export function createSimulationAssessment(payload) {
+  return apiFetch("/api/simulations/assessments", { method: "POST", body: payload, identityHeaders: "admin" });
+}
+
+export function listScenarios() {
+  return apiFetch("/api/simulations/scenarios", { identityHeaders: "admin" });
+}
+
+export function listTargetRoles() {
+  return apiFetch("/api/users/target-roles", { identityHeaders: "admin" });
+}
+
 export const api = {
   base: API_BASE_URL,
   login: (email, password) => request("/api/auth/login", { method: "POST", body: { email, password } }),
@@ -127,6 +155,8 @@ export const api = {
   startAttempt: (token, assessmentId) => request("/api/attempts", { method: "POST", token, body: { assessmentId } }),
   getAttempt: (token, attemptId) => request(`/api/attempts/${attemptId}`, { token }),
   getEmployeeDashboard: (token) => request("/api/dashboards/employee", { token }),
+  getMyAttempts: (token) => request("/api/attempts/mine", { token }),
+  getDefaultSimulation: (token) => request("/api/simulations/assessments/default", { token }),
   submitAttempt: (token, attemptId, answers) =>
     request(`/api/attempts/${attemptId}/submit`, { method: "POST", token, body: { answers } }),
   logViolation: (token, attemptId, type) =>
