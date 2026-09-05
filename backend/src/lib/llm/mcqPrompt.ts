@@ -56,17 +56,26 @@ Rules you must follow exactly:
 - The 3 incorrect options (distractors) must be plausible and topically related to the passage — not random or nonsensical — but clearly wrong on close reading.
 - No two options may be duplicates or near-duplicate rephrasings of each other.
 - Base the question only on the provided passage; do not require outside knowledge.
-- You may phrase the question either affirmatively ("which of the following is...") or as a negated/EXCEPT stem ("which of the following is NOT..."); set "isNegatedStem" to match.
+- Default to a straightforward, affirmative stem ("Which of the following is...", "What is...") — this should be the phrasing for most questions. Only occasionally, for roughly 1 in every 4-5 questions, use a negated/EXCEPT stem ("Which of the following is NOT...", "...EXCEPT:") for variety. Negated stems should be the exception, not the default. Set "isNegatedStem" to match whichever phrasing you actually used.
 - Critical: do NOT compute or output which option is the final answer. Instead, for every option independently, judge only whether that option's own claim is true according to the passage (isTrueStatement), and explain why in "text". Exactly one option's isTrueStatement must differ from the other three — that single outlier is what makes the question answerable with one unambiguous correct option once isNegatedStem is accounted for. If your 4 options don't produce exactly one outlier this way, revise the options until they do.
 - Respond with JSON only, matching the given schema.`;
 
-export function buildMcqMessages(chunkText: string, heading: string | null) {
+// The soft "default to affirmative, use negated ~1 in 4-5" instruction in SYSTEM_PROMPT alone
+// doesn't reliably hold the ratio down (measured ~62% negated in a small-batch test, down from
+// ~81.5% with no guidance at all, but still far above the ~20-25% target). `forceAffirmative` is
+// a hard per-call override — the caller (see questions.service.ts) tracks the running negated/total
+// ratio for the current generation batch and sets this once the ratio hits the target ceiling,
+// which reliably keeps the batch-level ratio in range.
+export function buildMcqMessages(chunkText: string, heading: string | null, forceAffirmative = false) {
   const context = heading ? `Section: ${heading}\n\n${chunkText}` : chunkText;
+  const stemInstruction = forceAffirmative
+    ? `\n\nIMPORTANT: This batch has already used enough negated/EXCEPT-style questions for now. Write this one with a straightforward AFFIRMATIVE stem only (e.g. "Which of the following is...") — do not use "NOT" or "EXCEPT" phrasing, and set "isNegatedStem" to false.`
+    : "";
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `Generate one MCQ from this training content passage:\n\n"""\n${context}\n"""`,
+      content: `Generate one MCQ from this training content passage:\n\n"""\n${context}\n"""${stemInstruction}`,
     },
   ];
 }

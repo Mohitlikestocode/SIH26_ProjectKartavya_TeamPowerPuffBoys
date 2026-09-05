@@ -23,11 +23,11 @@ interface RawModelOutput {
 // turning per-option isTrueStatement values into a final answer key (shared with the admin
 // edit/manual-create paths so the same rule applies everywhere).
 // Never throws — failures come back as a result so the caller can log-and-retry.
-export async function generateMcqDraft(chunk: RawChunk): Promise<GenerationOutcome> {
+export async function generateMcqDraft(chunk: RawChunk, forceAffirmative = false): Promise<GenerationOutcome> {
   let raw: string;
   try {
     raw = await chatCompletion({
-      messages: buildMcqMessages(chunk.text, chunk.heading),
+      messages: buildMcqMessages(chunk.text, chunk.heading, forceAffirmative),
       responseFormat: { type: "json_schema", json_schema: { name: "mcq", schema: MCQ_JSON_SCHEMA, strict: true } },
     });
   } catch (err) {

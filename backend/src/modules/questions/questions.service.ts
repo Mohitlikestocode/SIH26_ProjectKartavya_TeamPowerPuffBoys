@@ -10,9 +10,9 @@ import type { Chunk, Prisma, Question, QuestionStatus } from "@prisma/client";
 
 const MAX_ATTEMPTS_PER_CHUNK = 3;
 
-async function generateForChunk(chunk: Chunk) {
+async function generateForChunk(chunk: Chunk, forceAffirmative: boolean) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_CHUNK; attempt++) {
-    const outcome = await generateMcqDraft({ sequence: chunk.sequence, heading: chunk.heading, text: chunk.text });
+    const outcome = await generateMcqDraft({ sequence: chunk.sequence, heading: chunk.heading, text: chunk.text }, forceAffirmative);
 
     if (!outcome.ok) {
       await prisma.generationRejection.create({
@@ -56,11 +56,25 @@ export async function generateQuestionsForDocument(documentId: string) {
     throw new ApiError(409, `Document is not ready for generation (status: ${document.status}).`);
   }
 
+  // Soft prompt guidance alone doesn't reliably hold the negated-stem ratio down (measured ~62%
+  // negated vs. a ~20-25% target in a small-batch test). This tracks the running ratio for the
+  // batch and forces an affirmative stem (see mcqPrompt.ts) once it hits the ceiling, until the
+  // ratio drops back under it.
+  const NEGATED_STEM_RATIO_CEILING = 0.25;
+  let totalGenerated = 0;
+  let negatedGenerated = 0;
+
   const results = { generated: 0, failedChunkIds: [] as string[] };
   for (const chunk of document.chunks) {
-    const question = await generateForChunk(chunk);
-    if (question) results.generated++;
-    else results.failedChunkIds.push(chunk.id);
+    const forceAffirmative = totalGenerated > 0 && negatedGenerated / totalGenerated >= NEGATED_STEM_RATIO_CEILING;
+    const question = await generateForChunk(chunk, forceAffirmative);
+    if (question) {
+      results.generated++;
+      totalGenerated++;
+      if (question.isNegatedStem) negatedGenerated++;
+    } else {
+      results.failedChunkIds.push(chunk.id);
+    }
   }
   return results;
 }
