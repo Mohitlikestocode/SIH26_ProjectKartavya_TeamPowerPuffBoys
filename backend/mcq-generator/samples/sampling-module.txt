@@ -1,0 +1,94 @@
+NSSTA Training Module — Sampling Methodology for Official Statistics
+Unit 4: Frames, Designs and Precision
+
+1. The sampling frame
+
+A sampling frame is the operational list from which units are actually selected.
+It is not the target population; it is the best available approximation of it, and
+the gap between the two is the first source of error in any survey.
+
+Two frame errors matter in practice. Over-coverage occurs when the frame contains
+units that do not belong to the target population — establishments that have
+closed, households that have dissolved, duplicate entries for the same unit.
+Under-coverage occurs when units that do belong to the population are absent from
+the frame — newly established units, unregistered enterprises, households in
+settlements added since the last listing operation.
+
+Over-coverage inflates fieldwork cost and reduces the achieved sample, but is
+detectable in the field: an enumerator reaches the address and records the unit as
+ineligible. Under-coverage is more damaging because it is invisible from inside the
+survey. No amount of weighting recovers a unit that was never eligible for
+selection, and no increase in sample size compensates for it, since the additional
+units are drawn from the same defective list. Frame errors are corrected by
+updating or supplementing the frame, not by adjusting estimates afterwards.
+
+Non-response is a distinct problem and must not be confused with frame error. A
+non-respondent is a unit that was correctly on the frame and correctly selected but
+from which data could not be collected. Non-response is addressed through weighting
+adjustments or imputation; frame error is not.
+
+2. Simple random sampling as a benchmark
+
+Under simple random sampling without replacement, every unit in the frame has an
+equal and known probability of selection, and every combination of units of a given
+size is equally likely. It is rarely used directly in large-scale official surveys,
+because it requires a complete unit-level frame and produces samples scattered
+across the whole country, which is expensive to enumerate.
+
+Its role is as a benchmark. The precision of any complex design is conventionally
+expressed relative to the precision simple random sampling would have achieved with
+the same number of units.
+
+3. Stratification
+
+Stratification divides the frame into mutually exclusive and exhaustive groups —
+by state, by sector, by size class — and draws an independent sample within each.
+Because between-stratum variation is removed from the sampling error, stratification
+generally improves precision relative to simple random sampling, and it guarantees
+that each stratum is represented rather than leaving representation to chance.
+
+Stratification requires that the stratifying variable be known for every unit on
+the frame before selection. A variable measured during the survey cannot be used to
+stratify it.
+
+4. Cluster sampling and the design effect
+
+Cluster sampling selects groups of units — villages, urban blocks, enumeration
+areas — and then enumerates units within the selected groups. It reduces travel and
+listing cost substantially, which is why nearly all large household surveys are
+clustered.
+
+The cost saving is paid for in precision. Units within a cluster tend to resemble
+one another, so each additional household within a selected village contributes
+less new information than a household selected independently would. The design
+effect quantifies this: it is the ratio of the variance of an estimate under the
+actual design to the variance that simple random sampling would have produced with
+the same sample size.
+
+A design effect of 2.0 means the clustered design has twice the variance of simple
+random sampling at equal sample size. To achieve the precision that n units would
+have delivered under simple random sampling, the clustered design requires
+approximately n multiplied by the design effect. The design effect is therefore a
+sample-size planning input, applied before fieldwork, and not merely a correction
+applied to standard errors at the analysis stage. Design effects are estimated from
+previous rounds of the same or a similar survey.
+
+5. Rotational panel designs
+
+Surveys that measure change over time — labour force participation, prices,
+enterprise activity — commonly use rotational panels. A selected unit remains in
+the sample for a fixed number of consecutive rounds and is then replaced, so that
+consecutive rounds share part of their sample.
+
+This overlap is deliberate. Estimates from two rounds that share units are
+positively correlated, and that correlation reduces the variance of the difference
+between them. Since the primary output of such a survey is the change from one
+period to the next, overlap is what makes the headline figure precise. A design
+that replaces the entire sample every round sets the overlap to zero and produces
+noticeably noisier change estimates, even though each individual round is estimated
+just as well.
+
+The cost of repeated interviewing is panel conditioning: households interviewed
+several times may begin to answer differently, whether through fatigue, learning
+what a shorter answer avoids, or genuine changes in reporting behaviour. Rotation
+schemes bound this by limiting the number of rounds any unit remains in the sample.
