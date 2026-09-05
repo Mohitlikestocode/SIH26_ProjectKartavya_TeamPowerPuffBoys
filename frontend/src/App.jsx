@@ -262,13 +262,16 @@ export default function App() {
   const DEMO_LOGIN_EMAIL = { learner: "learner@kartavya.gov.in", trainer: "trainer@kartavya.gov.in", admin: "admin@kartavya.gov.in" };
   const signIn = () => {
     const r = st.loginTab;
-    setState({ role: r, acct: false, prefs: false, screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics" });
     api.login(DEMO_LOGIN_EMAIL[r], "password123")
       .then(({ token, user }) => {
-        setState({ authToken: token, authUser: user, authError: null });
+        setState({
+          role: r, acct: false, prefs: false,
+          screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics",
+          authToken: token, authUser: user, authError: null,
+        });
         loadEmployeeDashboard(token);
       })
-      .catch((err) => setState({ authToken: null, authUser: null, authError: err.message }));
+      .catch((err) => setState({ authToken: null, authUser: null, authError: err.message, screen: "signin" }));
   };
 
   // Real diagnostic-attempt flow. GET /api/assessments/diagnostic + POST /api/attempts (which
