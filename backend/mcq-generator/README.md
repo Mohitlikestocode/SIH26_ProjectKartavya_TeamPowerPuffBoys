@@ -29,8 +29,14 @@ Standalone by design: no server, no database. It reads a file and writes JSON.
 
 ```bash
 npm install
-cp .env.example .env      # then put your ANTHROPIC_API_KEY in it
+cp .env.example .env      # then put your GROQ_API_KEY in it
 ```
+
+Runs on **Groq**, using strict structured outputs — the response is constrained
+to the schema during decoding rather than merely asked for. That needs a model
+which supports strict mode (`openai/gpt-oss-120b` by default; also
+`openai/gpt-oss-20b`, `qwen/qwen3.8-27b`). Other Groq models still work, but
+degrade to best-effort JSON, so expect more rejected batches.
 
 ## Run
 
@@ -59,7 +65,7 @@ npm run demo:specific
 | `--difficulty` | per stage | `foundational`, `intermediate`, `advanced` |
 | `--out` | `out/<stage>` | Output directory |
 | `--batch-size` | `5` | Items per API call |
-| `--model` | `claude-opus-5` | Model id |
+| `--model` | `openai/gpt-oss-120b` | Groq model id |
 | `--mock` | off | Offline sample output |
 
 `--help` lists every valid sub-skill tag.
@@ -110,11 +116,17 @@ grader marks against, which is what stops it drifting lenient between runs.
    intent goes into the prompt — so broad and specific genuinely differ.
 2. **`ontology.ts`** resolves each tag against the backend's seeded labels
    *before* any API call, so a typo costs nothing.
-3. **`prompt.ts`** puts the source material behind a cache breakpoint, so a
-   28-sub-skill sweep pays for the document once.
+3. **`prompt.ts`** assembles the brief, the stage intent and the source
+   material into one system message. Groq has no prompt-caching API, so the
+   document is re-sent on every request — which makes `--batch-size` a cost
+   lever as well as a reliability one.
 4. **`generate.ts`** requests items in small batches, passing what already
-   exists so the model covers new ground. Structured outputs enforce the JSON
-   shape — no fence-stripping, no `JSON.parse` guesswork.
+   exists so the model covers new ground. **`llm.ts`** is the only file that
+   knows the provider: it derives the JSON schema from the Zod schema, calls
+   Groq, and re-validates the parsed result with Zod regardless — strict mode
+   should make that unreachable, but a model without strict support degrades
+   silently, and a malformed item is worse than a failed request because it
+   reaches a learner.
 5. **`validate.ts`** checks what the schema cannot. For MCQs: four distinct
    options keyed A–D, a correct option that exists, reasoning for every option,
    no duplicates, a scenario long enough to require judgement, and a skewed

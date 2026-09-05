@@ -1,19 +1,17 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
+import type Groq from "groq-sdk";
 import { buildFreeTextSystem, buildFreeTextUserMessage, buildSystem, buildUserMessage } from "./prompt";
+import { completeJson, createClient, DEFAULT_MODEL } from "./llm";
 import {
   BatchSchema,
   FreeTextBatchSchema,
-  type Batch,
   type Difficulty,
-  type FreeTextBatch,
   type FreeTextItem,
   type Question,
 } from "./schema";
 import { mockBatch, mockFreeTextBatch } from "./mock";
 import type { Stage } from "./stages";
 
-export const DEFAULT_MODEL = process.env.MCQ_MODEL ?? "claude-opus-5";
+export { DEFAULT_MODEL };
 
 export interface GenerateOptions {
   sourceText: string;
@@ -21,7 +19,12 @@ export interface GenerateOptions {
   difficulty: Difficulty;
   count: number;
   stage: Stage;
-  /** Items per API call. Small batches keep each response short and let a late failure keep earlier work. */
+  /**
+   * Items per API call. Groq has no prompt caching, so the source material is
+   * re-sent on every request — larger batches mean fewer copies of the document
+   * paid for, smaller batches mean shorter responses less likely to hit the
+   * output limit.
+   */
   batchSize: number;
   mock: boolean;
   model?: string;
@@ -44,7 +47,7 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     return { questions: batch.questions, notes: [batch.notes], model: "mock" };
   }
 
-  const client = new Anthropic();
+  const client = createClient();
   const system = buildSystem(opts.sourceText, opts.stage);
 
   const questions: Question[] = [];
@@ -55,11 +58,18 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
     const want = Math.min(remaining, opts.batchSize);
     log(`Requesting ${want} item(s) — ${questions.length}/${opts.count} done...`);
 
-    const batch = await requestBatch(client, model, system, {
-      domain: opts.domain,
-      difficulty: opts.difficulty,
-      count: want,
-      alreadyGenerated: questions,
+    const batch = await completeJson({
+      client,
+      model,
+      system,
+      user: buildUserMessage({
+        domain: opts.domain,
+        difficulty: opts.difficulty,
+        count: want,
+        alreadyGenerated: questions,
+      }),
+      schema: BatchSchema,
+      schemaName: "question_batch",
     });
 
     if (batch.notes.trim()) notes.push(batch.notes.trim());
@@ -82,48 +92,6 @@ export async function generate(opts: GenerateOptions): Promise<GenerateResult> {
   }
 
   return { questions: questions.slice(0, opts.count), notes, model };
-}
-
-async function requestBatch(
-  client: Anthropic,
-  model: string,
-  system: Anthropic.TextBlockParam[],
-  ask: { domain: string; difficulty: Difficulty; count: number; alreadyGenerated: Question[] },
-): Promise<Batch> {
-  try {
-    const response = await client.messages.parse({
-      model,
-      max_tokens: 16000,
-      system,
-      messages: [{ role: "user", content: buildUserMessage(ask) }],
-      output_config: { format: zodOutputFormat(BatchSchema) },
-    });
-
-    if (!response.parsed_output) {
-      throw new Error("Model response did not parse against the question schema.");
-    }
-
-    const cached = response.usage.cache_read_input_tokens ?? 0;
-    if (cached > 0) process.stderr.write(`  (${cached.toLocaleString()} input tokens served from cache)\n`);
-
-    return response.parsed_output;
-  } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      throw new Error(
-        "Authentication failed. Set ANTHROPIC_API_KEY in .env, or run with --mock to try the pipeline without a key.",
-      );
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      throw new Error("Rate limited by the API. Wait and re-run, or lower --batch-size.");
-    }
-    if (error instanceof Anthropic.BadRequestError) {
-      throw new Error(`API rejected the request: ${error.message}`);
-    }
-    if (error instanceof Anthropic.APIError) {
-      throw new Error(`API error ${error.status}: ${error.message}`);
-    }
-    throw error;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +131,7 @@ export async function generateFreeText(opts: GenerateFreeTextOptions): Promise<G
     return { items: batch.items, notes: [batch.notes], model: "mock" };
   }
 
-  const client = new Anthropic();
+  const client: Groq = createClient();
   const system = buildFreeTextSystem(opts.sourceText);
   const items: FreeTextItem[] = [];
   const notes: string[] = [];
@@ -171,12 +139,19 @@ export async function generateFreeText(opts: GenerateFreeTextOptions): Promise<G
   for (let i = 0; i < opts.count; i++) {
     log(`Requesting written item ${i + 1}/${opts.count}...`);
 
-    const batch = await requestFreeTextBatch(client, model, system, {
-      domain: opts.domain,
-      difficulty: opts.difficulty,
-      count: 1,
-      mcqContext: opts.mcqContext,
-      alreadyGenerated: items,
+    const batch = await completeJson({
+      client,
+      model,
+      system,
+      user: buildFreeTextUserMessage({
+        domain: opts.domain,
+        difficulty: opts.difficulty,
+        count: 1,
+        mcqContext: opts.mcqContext,
+        alreadyGenerated: items,
+      }),
+      schema: FreeTextBatchSchema,
+      schemaName: "free_text_batch",
     });
 
     if (batch.notes.trim()) notes.push(batch.notes.trim());
@@ -189,52 +164,4 @@ export async function generateFreeText(opts: GenerateFreeTextOptions): Promise<G
   }
 
   return { items, notes, model };
-}
-
-async function requestFreeTextBatch(
-  client: Anthropic,
-  model: string,
-  system: Anthropic.TextBlockParam[],
-  ask: {
-    domain: string;
-    difficulty: Difficulty;
-    count: number;
-    mcqContext: Question[];
-    alreadyGenerated: FreeTextItem[];
-  },
-): Promise<FreeTextBatch> {
-  try {
-    const response = await client.messages.parse({
-      model,
-      max_tokens: 16000,
-      system,
-      messages: [{ role: "user", content: buildFreeTextUserMessage(ask) }],
-      output_config: { format: zodOutputFormat(FreeTextBatchSchema) },
-    });
-
-    if (!response.parsed_output) {
-      throw new Error("Model response did not parse against the written-item schema.");
-    }
-
-    const cached = response.usage.cache_read_input_tokens ?? 0;
-    if (cached > 0) process.stderr.write(`  (${cached.toLocaleString()} input tokens served from cache)\n`);
-
-    return response.parsed_output;
-  } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      throw new Error(
-        "Authentication failed. Set ANTHROPIC_API_KEY in .env, or run with --mock to try the pipeline without a key.",
-      );
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      throw new Error("Rate limited by the API. Wait and re-run.");
-    }
-    if (error instanceof Anthropic.BadRequestError) {
-      throw new Error(`API rejected the request: ${error.message}`);
-    }
-    if (error instanceof Anthropic.APIError) {
-      throw new Error(`API error ${error.status}: ${error.message}`);
-    }
-    throw error;
-  }
 }

@@ -154,7 +154,13 @@ async function main() {
     onProgress: (message) => console.error(message),
   });
 
-  const short = index.skills.filter((s) => s.returned < s.requested);
+  // A sub-skill can come up short for two very different reasons, and saying
+  // the wrong one sends someone looking at their source document when the
+  // actual problem was an API key.
+  const failed = index.skills.filter((s) => s.warnings.some((w) => w.startsWith("Generation failed")));
+  const short = index.skills.filter(
+    (s) => s.returned < s.requested && !failed.includes(s),
+  );
 
   console.error("");
   console.error(
@@ -162,6 +168,11 @@ async function main() {
       (index.total_free_text_items > 0 ? ` and ${index.total_free_text_items} written item(s)` : " item(s)") +
       ` across ${index.skills.length} file(s) in ${outDir}`,
   );
+  if (failed.length > 0) {
+    console.error(
+      `${failed.length} sub-skill(s) FAILED — see the warnings above and in index.json. Nothing was generated for them.`,
+    );
+  }
   if (short.length > 0) {
     console.error(
       `${short.length} sub-skill(s) returned fewer items than requested — the source material does not cover them deeply enough. See index.json.`,

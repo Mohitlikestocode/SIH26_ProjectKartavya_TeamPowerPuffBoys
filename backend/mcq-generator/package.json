@@ -2,7 +2,7 @@
   "name": "kartavya-mcq-generator",
   "version": "0.1.0",
   "private": true,
-  "description": "Case-based MCQ generator for Kartavya (SIH26101) \u2014 standalone MVP, no server, no database.",
+  "description": "Case-based MCQ generator for Kartavya (SIH26101) — standalone MVP, no server, no database.",
   "scripts": {
     "generate": "tsx src/cli.ts",
     "demo:broad": "tsx src/cli.ts --source samples/sampling-module.txt --skills domain:Statistical --stage broad --mock",
@@ -10,8 +10,8 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
     "dotenv": "^17.4.2",
+    "groq-sdk": "^1.6.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

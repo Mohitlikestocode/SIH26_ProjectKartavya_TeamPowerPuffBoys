@@ -45,7 +45,7 @@ measured trainer-agreement rate justified it, not because it seemed to work.
 
 ```bash
 npm install
-cp .env.example .env          # ANTHROPIC_API_KEY
+cp .env.example .env          # GROQ_API_KEY
 
 npm run generate -- --source samples/sampling-module.txt --skills domain:Statistical --stage broad
 npm run generate -- --source samples/sampling-module.txt --skills Sampling --stage specific
@@ -66,8 +66,9 @@ summarising the sweep. Each file carries `questions` (MCQ) and `free_text`
 |---|---|
 | `src/stages.ts` | **The two-stage design.** Item counts, difficulty, and the prompt intent that makes broad ≠ specific. Also `FREE_TEXT_INTENT`, the rubric-writing brief. |
 | `src/ontology.ts` | Competency tags, resolved against the backend's seeded list. |
-| `src/prompt.ts` | Generation brief. Source material sits behind a cache breakpoint. |
-| `src/generate.ts` | Batched API calls, structured outputs, typed error handling. |
+| `src/prompt.ts` | Generation brief and the two stage intents, assembled into one system message. |
+| `src/llm.ts` | **The only file that knows the provider.** Groq client, Zod → strict JSON schema, typed errors. |
+| `src/generate.ts` | Batching and the stop-early rules. Provider-agnostic. |
 | `src/validate.ts` | Quality checks a JSON schema cannot express, for both item kinds. |
 | `src/bank.ts` | Sweeps sub-skills, one output file each. |
 | `src/cli.ts` | Argument parsing and reporting. |
@@ -105,6 +106,19 @@ answer that establish each claim, and award nothing if no such words exist. That
 converts an unreliable judgment task into a tractable entailment one, and it is
 why every criterion ships with a `met_example` and a `not_met_example`: they are
 the anchors that stop a grader drifting lenient between runs.
+
+**Groq has no prompt caching, so `--batch-size` is a cost lever.** The source
+document is re-sent with every request. A 28-sub-skill sweep at batch size 5
+sends the document roughly 28 times, not once. Raising the batch size cuts that
+proportionally but lengthens each response, and a response that hits the output
+limit fails the whole batch — `llm.ts` names that case explicitly rather than
+letting it look like a schema error.
+
+**The Zod parse after the API call is not redundant.** Strict structured output
+is only available on some Groq models; anything else degrades to best-effort
+JSON with no error. The parse in `llm.ts` is what stops a malformed item
+reaching a learner, so do not remove it on the grounds that the schema is
+already enforced.
 
 **Generate a bank ahead of time; never generate during a live test.** Stage 2
 items must exist before a learner reaches stage 2 — generation is far too slow

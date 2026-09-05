@@ -1,4 +1,3 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { ONTOLOGY } from "./ontology";
 import type { Difficulty, FreeTextItem, Question } from "./schema";
 import { FREE_TEXT_INTENT, stageProfile, type Stage } from "./stages";
@@ -30,18 +29,15 @@ ${Object.entries(ONTOLOGY)
   .map(([domain, subSkills]) => `  ${domain}: ${subSkills.join(", ")}`)
   .join("\n")}`;
 
-export function buildSystem(sourceText: string, stage: Stage): Anthropic.TextBlockParam[] {
+// One system string rather than separate cacheable blocks. Groq has no
+// prompt-caching API, so the source material is re-sent with every request —
+// which makes --batch-size a cost lever, not just a reliability one.
+export function buildSystem(sourceText: string, stage: Stage): string {
   return [
-    { type: "text", text: RULES },
-    { type: "text", text: `STAGE — ${stage.toUpperCase()}\n\n${stageProfile(stage).intent}` },
-    {
-      type: "text",
-      text: `SOURCE_CONTENT:\n\n${sourceText}`,
-      // Everything above this point is identical for every batch and every
-      // sub-skill in a run, so only the first request pays for the source.
-      cache_control: { type: "ephemeral" },
-    },
-  ];
+    RULES,
+    `STAGE — ${stage.toUpperCase()}\n\n${stageProfile(stage).intent}`,
+    `SOURCE_CONTENT:\n\n${sourceText}`,
+  ].join("\n\n---\n\n");
 }
 
 export function buildUserMessage(opts: {
@@ -75,17 +71,8 @@ export function buildUserMessage(opts: {
 // own brief rather than an MCQ brief with caveats bolted on.
 // ---------------------------------------------------------------------------
 
-export function buildFreeTextSystem(sourceText: string): Anthropic.TextBlockParam[] {
-  return [
-    { type: "text", text: FREE_TEXT_INTENT },
-    {
-      type: "text",
-      text: `SOURCE_CONTENT:\n\n${sourceText}`,
-      // Same source, same breakpoint as the MCQ pass. When both run in one
-      // sweep the document is paid for once, not twice.
-      cache_control: { type: "ephemeral" },
-    },
-  ];
+export function buildFreeTextSystem(sourceText: string): string {
+  return [FREE_TEXT_INTENT, `SOURCE_CONTENT:\n\n${sourceText}`].join("\n\n---\n\n");
 }
 
 export function buildFreeTextUserMessage(opts: {
