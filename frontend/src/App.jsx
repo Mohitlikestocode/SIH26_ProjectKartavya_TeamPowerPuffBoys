@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
+import { uploadDocument, generateForDocument } from "./lib/api";
 import {
   D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
-  CATALOGUE, INPROGRESS, CERTS, QUESTIONS, HEAT, RAMP, EFFECT, EMERGING,
+  CATALOGUE, INPROGRESS, CERTS, HEAT, RAMP, EFFECT, EMERGING,
   REPORTS, SESSIONS, FLOW, ASSIST,
 } from "./data";
 
@@ -42,13 +43,14 @@ const initialState = {
   target: 2, assessed: false, cursor: 0, answers: {}, essay: "",
   catDomain: "All", catSource: "All",
   lang: "EN", scale: 1, contrast: false,
-  scanner: false, scanInfo: false, assistant: false, generated: false,
+  scanner: false, scanInfo: false, assistant: false,
   prefs: false, acct: false,
   genCount: "20", genCourse: 1, genLang: "English",
-  session: 0, addOpen: false,
-  addStem: "", addO: ["", "", "", ""], addCorrect: 0, addDomain: "Statistical", addDiff: "Moderate",
-  customQs: [],
-  qStatus: { "01": "approved", "02": "pending", "03": "approved", "04": "pending" },
+  // Real upload/generation state (Step 2 of the frontend/backend integration) — replaces the old
+  // fake `generated` flag + setTimeout simulation.
+  uploadFile: null, uploadStatus: "idle", uploadedDoc: null, uploadError: null,
+  generateStatus: "idle", generateResult: null, generateError: null,
+  session: 0,
 };
 
 function levels(state) {
@@ -226,32 +228,10 @@ export default function App() {
     };
   });
 
-  const setQ = (no, val) => setState((s) => ({ qStatus: Object.assign({}, s.qStatus, { [no]: val }) }));
-  const statuses = Object.values(st.qStatus);
-  const ALLQ = QUESTIONS.concat(st.customQs);
-  const questions = ALLQ.map((q) => {
-    const s0 = st.qStatus[q.no] || "pending";
-    const d = DOM[q.domain];
-    const conf = parseFloat(q.confidence);
-    const cc = conf >= 0.85 ? ["#166534", "#EBF5EE", "#BBDEC7"] : conf >= 0.7 ? ["#9A3412", "#FDF0E4", "#EFCFAC"] : ["#991B1B", "#FBECEC", "#EBC4C4"];
-    return {
-      no: q.no, stem: q.stem, difficulty: q.difficulty, confidence: q.confidence, page: q.page, rationale: q.rationale,
-      manual: !!q.manual, aiGenerated: !q.manual,
-      originLabel: q.manual ? "Written by you" : "AI-generated",
-      originFg: q.manual ? "#123E7C" : "#5A6472",
-      originBg: q.manual ? "#E8F0FA" : "#F5F6F8",
-      originBorder: q.manual ? "#B9CFEC" : "#C9CFD8",
-      domain: q.domain, domColor: d.color, domTint: d.tint, domBorder: d.border,
-      confColor: cc[0], confTint: cc[1], confBorder: cc[2],
-      options: q.options.map((o, i) => ({ key: o[0], text: o[1], border: i === q.correct ? "#BBDEC7" : "#E4E7EC", bg: i === q.correct ? "#F4FAF6" : "#fff" })),
-      rowBg: s0 === "rejected" ? "#FCFAFA" : s0 === "approved" ? "#FBFDFB" : "#fff",
-      statusLabel: s0 === "approved" ? "Approved for publishing" : s0 === "rejected" ? "Rejected" : "Awaiting your review",
-      statusColor: s0 === "approved" ? "#166534" : s0 === "rejected" ? "#991B1B" : "#9A3412",
-      approveBg: s0 === "approved" ? "#166534" : "#fff", approveFg: s0 === "approved" ? "#fff" : "#166534",
-      rejectBg: s0 === "rejected" ? "#991B1B" : "#fff", rejectFg: s0 === "rejected" ? "#fff" : "#991B1B",
-      approve: () => setQ(q.no, "approved"), reject: () => setQ(q.no, "rejected"), edit: () => setQ(q.no, "pending"),
-    };
-  });
+  // Question review data now lives entirely inside TrainerStudio.jsx (real fetch/approve/reject/
+  // edit/create against the backend) — same self-contained-component pattern already used for
+  // Footer.jsx's health check, rather than routing async backend state through this shared `v`
+  // object the way the old mock data was.
 
   const heatRows = HEAT.map((r) => {
     const o = { name: r.name, count: r.count };
@@ -348,13 +328,35 @@ export default function App() {
     setSrcI: () => setState({ catSource: "iGOT" }),
     setSrcN: () => setState({ catSource: "NSSTA" }),
     inProgress: INPROGRESS.map((c) => Object.assign({}, SRC[c.src], c)),
-    certs: CERTS, questions, heatRows, effect: EFFECT, reports: REPORTS, flowSteps: FLOW,
+    certs: CERTS, heatRows, effect: EFFECT, reports: REPORTS, flowSteps: FLOW,
     emerging: EMERGING.map((m) => Object.assign({}, DOM[m.domain], { name: m.name, delta: m.delta, domain: DOM[m.domain].label })),
-    approvedCount: statuses.filter((s) => s === "approved").length,
-    rejectedCount: statuses.filter((s) => s === "rejected").length,
-    pendingCount: statuses.filter((s) => s === "pending").length,
-    generated: st.generated,
-    doGenerate: () => { setState({ generated: true }); setTimeout(() => setState({ screen: "tstudio" }), 700); },
+    // Real document upload + generation (Step 2 of the frontend/backend integration).
+    selectedFileName: st.uploadFile ? st.uploadFile.name : null,
+    uploadStatus: st.uploadStatus, uploadedDoc: st.uploadedDoc, uploadError: st.uploadError,
+    onFileChange: (e) => setState({ uploadFile: e.target.files[0] || null, uploadError: null, uploadStatus: "idle" }),
+    canUpload: !!st.uploadFile && st.uploadStatus !== "uploading",
+    doUpload: async () => {
+      if (!st.uploadFile) return;
+      setState({ uploadStatus: "uploading", uploadError: null });
+      try {
+        const doc = await uploadDocument(st.uploadFile);
+        setState({ uploadStatus: "uploaded", uploadedDoc: doc, uploadFile: null });
+      } catch (err) {
+        setState({ uploadStatus: "error", uploadError: err.message });
+      }
+    },
+    generateStatus: st.generateStatus, generateResult: st.generateResult, generateError: st.generateError,
+    canGenerate: !!st.uploadedDoc && st.generateStatus !== "generating",
+    doGenerate: async () => {
+      if (!st.uploadedDoc) return;
+      setState({ generateStatus: "generating", generateError: null, generateResult: null });
+      try {
+        const result = await generateForDocument(st.uploadedDoc.id);
+        setState({ generateStatus: "done", generateResult: result });
+      } catch (err) {
+        setState({ generateStatus: "error", generateError: err.message });
+      }
+    },
     sessions: SESSIONS.map((s, i) => {
       const on = st.session === i;
       const sc = s.status === "Live" ? ["#166534", "#EBF5EE", "#BBDEC7"] : s.status === "Scheduled" ? ["#9A4A0B", "#FDF0E1", "#F3CFA6"] : ["#5A6472", "#F1F3F6", "#DDE1E7"];
@@ -389,36 +391,6 @@ export default function App() {
     c20Bg: st.genCount === "20" ? "#123E7C" : "#fff", c20Fg: st.genCount === "20" ? "#fff" : "#123E7C",
     c30Bg: st.genCount === "30" ? "#123E7C" : "#fff", c30Fg: st.genCount === "30" ? "#fff" : "#123E7C",
     genLang: st.genLang, onGenLang: (e) => setState({ genLang: e.target.value }),
-    addOpen: st.addOpen, addClosed: !st.addOpen,
-    openAdd: () => setState({ addOpen: true }),
-    closeAdd: () => setState({ addOpen: false }),
-    addStem: st.addStem, onAddStem: (e) => setState({ addStem: e.target.value }),
-    addOptions: st.addO.map((val, i) => ({
-      key: ["A", "B", "C", "D"][i], value: val,
-      onChange: (e) => setState((s) => { const o = s.addO.slice(); o[i] = e.target.value; return { addO: o }; }),
-      pick: () => setState({ addCorrect: i }),
-      markBg: st.addCorrect === i ? "#166534" : "#fff",
-      markFg: st.addCorrect === i ? "#fff" : "#5A6472",
-      markBorder: st.addCorrect === i ? "#166534" : "#C9D6E8",
-      markLabel: st.addCorrect === i ? "Correct answer" : "Mark correct",
-    })),
-    addDomain: st.addDomain, onAddDomain: (e) => setState({ addDomain: e.target.value }),
-    addDiff: st.addDiff, onAddDiff: (e) => setState({ addDiff: e.target.value }),
-    saveAdd: () => setState((s) => {
-      if (!s.addStem.trim()) return {};
-      const no = "M" + String(s.customQs.length + 1).padStart(2, "0");
-      const q = {
-        no, domain: s.addDomain, difficulty: s.addDiff, confidence: "—", page: "—", manual: true,
-        stem: s.addStem, options: s.addO.map((txt, i) => [["A", "B", "C", "D"][i], txt || "(blank option)"]),
-        correct: s.addCorrect, rationale: "Written and owned by you. Not model-generated, so no confidence score applies.",
-      };
-      return {
-        customQs: s.customQs.concat([q]), qStatus: Object.assign({}, s.qStatus, { [no]: "approved" }),
-        addOpen: false, addStem: "", addO: ["", "", "", ""], addCorrect: 0,
-      };
-    }),
-    manualCount: String(st.customQs.length),
-    totalItemCount: String(QUESTIONS.length + st.customQs.length),
     qrSmall: qr(96, 7717), qrMid: qr(130, 7717), qrLarge: qr(220, 7717),
     lang: st.lang,
     onLangSelect: (e) => setState({ lang: e.target.value }),

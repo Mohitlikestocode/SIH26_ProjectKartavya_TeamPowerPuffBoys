@@ -11,6 +11,101 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// Assessment content ingestion / question bank
+// ---------------------------------------------------------------------------
+
+enum DocumentStatus {
+  pending
+  processing
+  processed
+  failed
+}
+
+enum QuestionStatus {
+  draft
+  approved
+  rejected
+}
+
+model SourceDocument {
+  id               String         @id @default(cuid())
+  originalFilename String
+  mimeType         String
+  storagePath      String
+  status           DocumentStatus @default(pending)
+  pageCount        Int?
+  ocrFlaggedPages  Int[]          @default([])
+  failureReason    String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  chunks    Chunk[]
+  questions Question[]
+}
+
+model Chunk {
+  id         String         @id @default(cuid())
+  documentId String
+  document   SourceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sequence   Int
+  heading    String?
+  text       String
+  createdAt  DateTime       @default(now())
+
+  questions Question[]
+
+  @@unique([documentId, sequence])
+}
+
+model Question {
+  id               String          @id @default(cuid())
+  sourceDocumentId String?
+  sourceDocument   SourceDocument? @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  chunkId          String?
+  chunk            Chunk?          @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  chunkText        String?
+  question         String
+  options          String[]
+  isNegatedStem    Boolean         @default(false)
+  correctOption    Int
+  explanations     Json
+  domain           String          @default("TBD")
+  skill            String          @default("TBD")
+  status           QuestionStatus  @default(draft)
+  createdAt        DateTime        @default(now())
+
+  editLogs QuestionEditLog[]
+
+  @@index([sourceDocumentId])
+  @@index([chunkId])
+  @@index([status])
+  @@index([isNegatedStem])
+}
+
+model QuestionEditLog {
+  id           String   @id @default(cuid())
+  questionId   String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  editedBy     String
+  editedAt     DateTime @default(now())
+  fieldChanged String
+  oldValue     String?
+  newValue     String?
+
+  @@index([questionId])
+}
+
+model GenerationRejection {
+  id        String   @id @default(cuid())
+  chunkId   String
+  reason    String
+  rawOutput String
+  createdAt DateTime @default(now())
+
+  @@index([chunkId])
+}
+
+// ---------------------------------------------------------------------------
 // Auth / users
 // ---------------------------------------------------------------------------
 
@@ -27,19 +122,19 @@ model User {
   name         String
   role         RoleName @default(learner)
 
-  designation String?
-  department  String?
-  cadre       String? // ISS / SSS / State DES / MoSPI-NSO
-  state       String?
+  designation     String?
+  department      String?
+  cadre           String? // ISS / SSS / State DES / MoSPI-NSO
+  state           String?
   experienceYears Int?
 
   targetRoleId String?
   targetRole   TargetRole? @relation(fields: [targetRoleId], references: [id])
 
-  competencyScores UserCompetencyScore[]
-  attempts         Attempt[]
-  createdAssessments Assessment[] @relation("AssessmentCreatedBy")
-  createdSessions  Session[]     @relation("SessionCreatedBy")
+  competencyScores   UserCompetencyScore[]
+  attempts           Attempt[]
+  createdAssessments Assessment[]          @relation("AssessmentCreatedBy")
+  createdSessions    Session[]             @relation("SessionCreatedBy")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -84,20 +179,17 @@ model TargetRole {
   createdAt DateTime @default(now())
 }
 
-// Required proficiency level (0-100) for a sub-skill, for a given target role.
 model RoleCompetencyRequirement {
-  id           String     @id @default(cuid())
-  targetRoleId String
-  targetRole   TargetRole @relation(fields: [targetRoleId], references: [id])
-  subSkillId   String
-  subSkill     SubSkill   @relation(fields: [subSkillId], references: [id])
+  id            String     @id @default(cuid())
+  targetRoleId  String
+  targetRole    TargetRole @relation(fields: [targetRoleId], references: [id])
+  subSkillId    String
+  subSkill      SubSkill   @relation(fields: [subSkillId], references: [id])
   requiredLevel Int // 0-100
 
   @@unique([targetRoleId, subSkillId])
 }
 
-// Current proficiency level (0-100) for a sub-skill, for a given user.
-// Seeded/mock initially; later derived from Attempt scores.
 model UserCompetencyScore {
   id         String   @id @default(cuid())
   userId     String
@@ -113,7 +205,7 @@ model UserCompetencyScore {
 }
 
 // ---------------------------------------------------------------------------
-// Assessments / Attempts (shared contract with the MCQ module)
+// Assessments / Attempts
 // ---------------------------------------------------------------------------
 
 enum AssessmentType {
@@ -123,27 +215,21 @@ enum AssessmentType {
 }
 
 model Assessment {
-  id              String         @id @default(cuid())
-  type            AssessmentType
-  title           String
-  domainTags      String[] // subset of the 4 domain names
-  subSkillTags    String[] // sub-skill names, e.g. "Sampling Methodology"
+  id           String         @id @default(cuid())
+  type         AssessmentType
+  title        String
+  domainTags   String[] // subset of the 4 domain names
+  subSkillTags String[] // sub-skill names, e.g. "Sampling Methodology"
 
   createdById String
-  createdBy   User   @relation("AssessmentCreatedBy", fields: [createdById], references: [id])
+  createdBy   User @relation("AssessmentCreatedBy", fields: [createdById], references: [id])
 
-  // Owned by the MCQ teammate's module — loosely typed so this side never
-  // needs to know their internal schema.
   questions Json?
-
-  // Owned by this module (Phase 4) — ScenarioGraph shape.
-  scenario Json?
+  scenario  Json?
 
   timeLimitSeconds Int
   passingScore     Int
 
-  // Trainer's per-assessment choice: does the assessment runner launch the
-  // camera/proctoring harness for this one? Defaults to off — opt in.
   isProctored Boolean @default(false)
 
   sessions Session[]
@@ -175,9 +261,9 @@ model Attempt {
   perSubSkillScore Json? // Record<subSkill, number>
 
   violations ViolationEvent[]
-  status     AttemptStatus    @default(in_progress)
+  status     AttemptStatus @default(in_progress)
 
-  startedAt   DateTime  @default(now())
+  startedAt   DateTime @default(now())
   submittedAt DateTime?
 }
 
@@ -208,10 +294,10 @@ model Session {
   assessment   Assessment @relation(fields: [assessmentId], references: [id])
 
   createdById String
-  createdBy   User   @relation("SessionCreatedBy", fields: [createdById], references: [id])
+  createdBy   User @relation("SessionCreatedBy", fields: [createdById], references: [id])
 
   targetAudience String? // free text: cadre / department scope
-  joinToken      String   @unique
+  joinToken      String @unique
   expiresAt      DateTime
 
   attempts Attempt[]
@@ -224,30 +310,30 @@ model Session {
 // ---------------------------------------------------------------------------
 
 model Course {
-  id            String   @id @default(cuid())
-  doId          String   @unique // do_-style ID, modeled on Sunbird composite/v3/search
-  title         String
-  provider      String   @default("iGOT Karmayogi")
-  durationHours Int?
+  id             String   @id @default(cuid())
+  doId           String   @unique // do_-style ID, modeled on Sunbird composite/v3/search
+  title          String
+  provider       String   @default("iGOT Karmayogi")
+  durationHours  Int?
   competencyTags String[]
-  description   String?
-  level         String? // Beginner | Intermediate | Advanced | Expert
-  rating        Float?  // 0-5, deterministic mock (not real user feedback)
+  description    String?
+  level          String? // Beginner | Intermediate | Advanced | Expert
+  rating         Float? // 0-5, deterministic mock (not real user feedback)
 
   createdAt DateTime @default(now())
 }
 
 model TrainingProgramme {
-  id            String   @id @default(cuid())
-  name          String
-  targetCadre   String[] // ISS / SSS / State DES / ...
-  durationDays  Int?
-  venue         String?
-  batchSize     Int?
+  id             String   @id @default(cuid())
+  name           String
+  targetCadre    String[] // ISS / SSS / State DES / ...
+  durationDays   Int?
+  venue          String?
+  batchSize      Int?
   competencyTags String[]
-  description   String?
-  level         String? // Beginner | Intermediate | Advanced
-  rating        Float?  // 0-5, deterministic mock (not real user feedback)
+  description    String?
+  level          String? // Beginner | Intermediate | Advanced
+  rating         Float? // 0-5, deterministic mock (not real user feedback)
 
   createdAt DateTime @default(now())
 }

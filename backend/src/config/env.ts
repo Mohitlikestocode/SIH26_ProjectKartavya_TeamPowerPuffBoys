@@ -16,6 +16,9 @@ export const env = {
   sessionJoinTokenTtlMinutes: Number(process.env.SESSION_JOIN_TOKEN_TTL_MINUTES ?? 120),
   sarvamApiKey: process.env.SARVAM_API_KEY ?? "",
   sarvamEnabled: (process.env.SARVAM_ENABLED ?? "false") === "true",
+  sarvamBaseUrl: process.env.SARVAM_BASE_URL ?? "https://api.sarvam.ai/v1",
+  sarvamModel: process.env.SARVAM_MODEL ?? "sarvam-105b",
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
+  uploadDir: process.env.UPLOAD_DIR ?? "uploads",
   frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:5173",
 };
