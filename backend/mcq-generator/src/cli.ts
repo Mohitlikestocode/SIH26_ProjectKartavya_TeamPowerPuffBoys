@@ -12,9 +12,13 @@ const USAGE = `Case-based question bank generator — Kartavya (SIH26101)
 Two stages, because that is the whole design:
 
   --stage broad      ${STAGE_PROFILES.broad.purpose}
-                     default ${STAGE_PROFILES.broad.itemsPerSkill} items/sub-skill, ${STAGE_PROFILES.broad.difficulty}
+                     default ${STAGE_PROFILES.broad.itemsPerSkill} MCQ/sub-skill, ${STAGE_PROFILES.broad.difficulty}, no written items
   --stage specific   ${STAGE_PROFILES.specific.purpose}
-                     default ${STAGE_PROFILES.specific.itemsPerSkill} items/sub-skill, ${STAGE_PROFILES.specific.difficulty}
+                     default ${STAGE_PROFILES.specific.itemsPerSkill} MCQ + ${STAGE_PROFILES.specific.freeTextPerSkill} written/sub-skill, ${STAGE_PROFILES.specific.difficulty}
+
+The MCQs carry the score — deterministic, and a trainer can check the key. The
+written items carry the diagnosis and the rubric a grader marks against; they
+are not scored automatically.
 
 Usage:
   npm run generate -- --source <file> --skills <a,b,c> [--stage broad|specific]
@@ -27,7 +31,8 @@ Required:
 
 Options:
   --stage <name>         ${STAGES.join(" | ")}          (default: broad)
-  --count <n>            Items per sub-skill              (default: per stage)
+  --count <n>            MCQ items per sub-skill          (default: per stage)
+  --free-text <n>        Written items per sub-skill      (default: per stage)
   --difficulty <level>   ${DIFFICULTIES.join(" | ")}     (default: per stage)
   --out <dir>            Output directory                 (default: out/<stage>)
   --batch-size <n>       Items per API call               (default: 5)
@@ -116,14 +121,21 @@ async function main() {
   const difficulty = difficultyRaw as Difficulty;
 
   const itemsPerSkill = parseCount(args, "count", profile.itemsPerSkill);
+  const freeTextPerSkill =
+    args["free-text"] === undefined ? profile.freeTextPerSkill : parseCount(args, "free-text", 0);
   const batchSize = parseCount(args, "batch-size", 5);
   const outDir = typeof args.out === "string" ? args.out : path.join("out", stage);
   const source = readSource(sourcePath);
 
   console.error(`Stage: ${stage} — ${profile.purpose}`);
   console.error(
-    `${skills.length} sub-skill(s) × ${itemsPerSkill} ${difficulty} item(s) = up to ${skills.length * itemsPerSkill} items`,
+    `${skills.length} sub-skill(s) × ${itemsPerSkill} ${difficulty} MCQ = up to ${skills.length * itemsPerSkill} items`,
   );
+  if (freeTextPerSkill > 0) {
+    console.error(
+      `${skills.length} sub-skill(s) × ${freeTextPerSkill} written item(s) = up to ${skills.length * freeTextPerSkill} items`,
+    );
+  }
   for (const w of source.warnings) console.error(`  warning: ${w}`);
   console.error("");
 
@@ -134,6 +146,7 @@ async function main() {
     stage,
     difficulty,
     itemsPerSkill,
+    freeTextPerSkill,
     batchSize,
     mock: args.mock === true,
     model: typeof args.model === "string" ? args.model : undefined,
@@ -144,7 +157,11 @@ async function main() {
   const short = index.skills.filter((s) => s.returned < s.requested);
 
   console.error("");
-  console.error(`Wrote ${index.total_items} item(s) across ${index.skills.length} file(s) in ${outDir}`);
+  console.error(
+    `Wrote ${index.total_items} MCQ` +
+      (index.total_free_text_items > 0 ? ` and ${index.total_free_text_items} written item(s)` : " item(s)") +
+      ` across ${index.skills.length} file(s) in ${outDir}`,
+  );
   if (short.length > 0) {
     console.error(
       `${short.length} sub-skill(s) returned fewer items than requested — the source material does not cover them deeply enough. See index.json.`,

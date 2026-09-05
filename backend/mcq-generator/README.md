@@ -11,10 +11,17 @@ for why the two stages exist — that is the design this tool serves.
 | | Stage 1 — `broad` | Stage 2 — `specific` |
 |---|---|---|
 | Covers | every sub-skill the role requires | only the weakest sub-skills |
-| Items per sub-skill | 2 | 6 |
+| MCQ per sub-skill | 2 | 6 |
+| Written items per sub-skill | 0 | 1 |
 | Default difficulty | intermediate | advanced |
 | Job | rank sub-skills weakest-first | measure, and localise the misconception |
 | Item style | one central idea, cleanly separates can/cannot | each distractor is a different failure mode |
+
+Inside stage 2 the two kinds do different jobs. **The MCQs carry the score** —
+deterministic, and a trainer can check the key. **The written items carry the
+diagnosis** and the rubric a grader marks against; they are not scored
+automatically, because a model's reading of a paragraph should not set someone's
+competency level until a measured agreement rate says it can.
 
 Standalone by design: no server, no database. It reads a file and writes JSON.
 
@@ -47,7 +54,8 @@ npm run demo:specific
 | `--source` | required | Source material, `.txt` or `.md` |
 | `--skills` | required | Comma-separated tags, or `all`, or `domain:Statistical` |
 | `--stage` | `broad` | `broad` or `specific` |
-| `--count` | per stage | Items per sub-skill |
+| `--count` | per stage | MCQ items per sub-skill |
+| `--free-text` | per stage | Written items per sub-skill |
 | `--difficulty` | per stage | `foundational`, `intermediate`, `advanced` |
 | `--out` | `out/<stage>` | Output directory |
 | `--batch-size` | `5` | Items per API call |
@@ -68,6 +76,34 @@ out/broad/
   ...
 ```
 
+Each file holds `questions` (MCQ) and `free_text` (written items). Every item
+carries `kind`, its resolved `competency`, and its `stage`.
+
+A written item looks like this — the rubric is the substantial part:
+
+```json
+{
+  "kind": "free_text",
+  "scenario": "…a work situation…",
+  "question": "Explain what these reports tell you, and what you would do.",
+  "reference_answer": "…what a strong answer contains, shown to the learner after…",
+  "criteria": [
+    {
+      "key": "c2",
+      "claim": "States that this is frame error rather than non-response, and that a weighting adjustment does not fix it",
+      "met_example": "A non-response adjustment would be wrong here, because these units were never eligible for selection…",
+      "not_met_example": "I would apply a non-response weighting adjustment to the units that did respond…",
+      "source_grounding": "Section 1 — non-response is a distinct problem"
+    }
+  ]
+}
+```
+
+**Each criterion is a claim the answer must make, not a term it must contain.**
+`"mentions non-response bias"` is passed by anyone who writes the phrase;
+the claim above is not. `met_example` and `not_met_example` are the anchors a
+grader marks against, which is what stops it drifting lenient between runs.
+
 ## How it works
 
 1. **`stages.ts`** decides what a good item looks like for this stage, and that
@@ -79,10 +115,13 @@ out/broad/
 4. **`generate.ts`** requests items in small batches, passing what already
    exists so the model covers new ground. Structured outputs enforce the JSON
    shape — no fence-stripping, no `JSON.parse` guesswork.
-5. **`validate.ts`** checks what the schema cannot: four distinct options keyed
-   A–D, a correct option that exists, reasoning for every option, no duplicates,
-   a scenario long enough to require judgement, and a skewed answer key across
-   the set. Failing items are dropped and reported.
+5. **`validate.ts`** checks what the schema cannot. For MCQs: four distinct
+   options keyed A–D, a correct option that exists, reasoning for every option,
+   no duplicates, a scenario long enough to require judgement, and a skewed
+   answer key across the set. For written items: 3–5 criteria, no criterion
+   whose met and not-met examples are the same, a reference answer present, and
+   a warning on any claim phrased as `"mentions X"` or short enough to be
+   satisfied by vocabulary. Failing items are dropped and reported.
 6. **`bank.ts`** sweeps the sub-skills and writes the files. One sub-skill
    failing does not lose the rest of the sweep.
 

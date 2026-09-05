@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { ONTOLOGY } from "./ontology";
-import type { Difficulty, Question } from "./schema";
-import { stageProfile, type Stage } from "./stages";
+import type { Difficulty, FreeTextItem, Question } from "./schema";
+import { FREE_TEXT_INTENT, stageProfile, type Stage } from "./stages";
 
 // The generator brief. Two deliberate differences from the original draft:
 //
@@ -61,6 +61,62 @@ export function buildUserMessage(opts: {
       "",
       "These items already exist for this sub-skill. Cover different material and different failure modes — do not restate them with new wording:",
       ...opts.alreadyGenerated.map((q) => `- ${q.question}`),
+    );
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Written-answer items.
+//
+// The RULES block above is about writing four options and three plausible
+// wrong ones — none of which applies here. So free-text generation gets its
+// own brief rather than an MCQ brief with caveats bolted on.
+// ---------------------------------------------------------------------------
+
+export function buildFreeTextSystem(sourceText: string): Anthropic.TextBlockParam[] {
+  return [
+    { type: "text", text: FREE_TEXT_INTENT },
+    {
+      type: "text",
+      text: `SOURCE_CONTENT:\n\n${sourceText}`,
+      // Same source, same breakpoint as the MCQ pass. When both run in one
+      // sweep the document is paid for once, not twice.
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+}
+
+export function buildFreeTextUserMessage(opts: {
+  domain: string;
+  difficulty: Difficulty;
+  count: number;
+  /** MCQ items already written for this sub-skill — their misconceptions are reusable as not_met examples. */
+  mcqContext: Question[];
+  alreadyGenerated: FreeTextItem[];
+}): string {
+  const lines = [
+    `COMPETENCY_DOMAIN: ${opts.domain}`,
+    `DIFFICULTY: ${opts.difficulty}`,
+    `NUM_ITEMS: ${opts.count}`,
+  ];
+
+  if (opts.mcqContext.length > 0) {
+    lines.push(
+      "",
+      "Multiple-choice items already exist for this sub-skill, covering these situations:",
+      ...opts.mcqContext.map((q) => `- ${q.question}`),
+      "",
+      "Choose a different situation for the written item — it should reach material the multiple-choice items do not, since a written answer can test reasoning they cannot.",
+    );
+  }
+
+  if (opts.alreadyGenerated.length > 0) {
+    lines.push(
+      "",
+      "These written items already exist. Cover different ground:",
+      ...opts.alreadyGenerated.map((i) => `- ${i.question}`),
     );
   }
 
