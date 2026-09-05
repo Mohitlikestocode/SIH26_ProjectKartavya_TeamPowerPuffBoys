@@ -37,8 +37,13 @@ function toPublicUser(user: {
   cadre: string | null;
   state: string | null;
   targetRoleId: string | null;
+  passwordHash?: string;
 }) {
-  const { ...rest } = user;
+  // The declared param type above doesn't list passwordHash, but the real Prisma User object
+  // passed in at every call site has it — TS's structural typing doesn't stop it riding along in
+  // the actual object, so it must be destructured out explicitly, not just typed away. Without
+  // this, login/register/me were handing every client their own bcrypt hash back verbatim.
+  const { passwordHash: _passwordHash, ...rest } = user;
   return rest;
 }
 
