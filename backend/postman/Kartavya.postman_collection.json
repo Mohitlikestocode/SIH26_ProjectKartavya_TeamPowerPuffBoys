@@ -1,0 +1,19 @@
+{
+  "info": {
+    "name": "Kartavya Backend (SIH26101)",
+    "description": "Placeholder collection — requests are added as each phase's endpoints land.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" }
+  ]
+}

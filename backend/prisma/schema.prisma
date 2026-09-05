@@ -1,0 +1,13 @@
+// Kartavya (SIH26101) backend — Prisma schema.
+// Models land in Phase 1 (see prompt.md build order): User, Role, CompetencyDomain,
+// SubSkill, RoleCompetencyRequirement, UserCompetencyScore, Assessment, Attempt,
+// ViolationEvent, Session, Course, TrainingProgramme.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
