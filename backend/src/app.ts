@@ -2,6 +2,8 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
+import fs from "node:fs";
+import path from "node:path";
 import { env } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 
@@ -45,6 +47,21 @@ app.use("/api/violations", violationsRouter);
 app.use("/api/simulations", simulationsRouter);
 app.use("/api/dashboards", dashboardsRouter);
 app.use("/api/i18n", multilingualRouter);
+
+// Serves the built frontend from the same container/origin as the API (used by the combined
+// Hugging Face Docker Space image — see /Dockerfile) so there's no separate frontend host, no
+// cross-origin calls, and no baked-in API URL to get wrong at build time. `backend/public` only
+// exists once the frontend has actually been built into it; in local dev (`npm run dev`, no
+// public/ present) this whole block is skipped and behavior is unchanged from before.
+const publicDir = path.join(__dirname, "../public");
+const indexHtmlPath = path.join(publicDir, "index.html");
+if (fs.existsSync(indexHtmlPath)) {
+  app.use(express.static(publicDir));
+  app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api") || req.path === "/health") return next();
+    res.sendFile(indexHtmlPath);
+  });
+}
 
 app.use(notFoundHandler);
 app.use(errorHandler);
