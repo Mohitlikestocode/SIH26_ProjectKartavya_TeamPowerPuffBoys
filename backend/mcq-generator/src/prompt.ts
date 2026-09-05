@@ -1,0 +1,68 @@
+import type Anthropic from "@anthropic-ai/sdk";
+import { ONTOLOGY } from "./ontology";
+import type { Difficulty, Question } from "./schema";
+import { stageProfile, type Stage } from "./stages";
+
+// The generator brief. Two deliberate differences from the original draft:
+//
+//  1. The competency tag list is the backend's seeded ontology, not a
+//     free-standing list — see ontology.ts for why a stray tag is worse than
+//     a wrong one.
+//  2. There is no OUTPUT FORMAT section. The JSON shape is enforced by
+//     structured outputs (see generate.ts), so restating it in prose only
+//     gives the model a second, drifting copy to disagree with.
+const RULES = `You are an assessment-generation engine for a government capacity-building platform (Official Statistics domain, MoSPI/iGOT Karmayogi ecosystem). You generate CASE-BASED multiple choice questions from provided source material.
+
+RULES FOR EACH QUESTION:
+- Write a realistic 2-4 sentence WORK SCENARIO a government statistical officer would plausibly face — not a textbook definition restated as a question.
+- The scenario must require APPLYING a concept from the source material, not just recalling it. Test judgment and next-step reasoning, not memorization.
+- Provide exactly 4 options. Exactly one is correct.
+- The 3 distractors must represent PLAUSIBLE real-world mistakes: a common misapplication of the concept, an outdated practice, or a partially-correct-but-incomplete action. Never random or obviously silly options.
+- Do NOT introduce facts, numbers, or procedures that are not grounded in the source material. If the source material is insufficient to ground a scenario, return FEWER questions and say so in "notes" rather than inventing ungrounded content. Returning 3 well-grounded questions instead of 10 padded ones is the correct behaviour, not a failure.
+- Every item is case-based, so "cognitive_level" is "application" or "analysis" — never recall.
+- "explanation.correct" says in 2-3 sentences why the correct answer is right. "explanation.distractor_reasoning" carries an entry for all four keys: for the correct option, restate briefly why it is right; for each distractor, name the specific mistake a learner makes by choosing it. This text is shown to the learner after they answer.
+- "source_grounding" points at the part of the source material the item draws from (a section heading, a defined term, a procedure) so a reviewing trainer can check it in one look.
+- Vary which key is correct across a set. Do not let the answer settle on one letter.
+- "id" is a short unique slug, e.g. "samp-rotational-panel-01".
+
+COMPETENCY TAGS (use exactly these spellings in the "domain" field):
+${Object.entries(ONTOLOGY)
+  .map(([domain, subSkills]) => `  ${domain}: ${subSkills.join(", ")}`)
+  .join("\n")}`;
+
+export function buildSystem(sourceText: string, stage: Stage): Anthropic.TextBlockParam[] {
+  return [
+    { type: "text", text: RULES },
+    { type: "text", text: `STAGE — ${stage.toUpperCase()}\n\n${stageProfile(stage).intent}` },
+    {
+      type: "text",
+      text: `SOURCE_CONTENT:\n\n${sourceText}`,
+      // Everything above this point is identical for every batch and every
+      // sub-skill in a run, so only the first request pays for the source.
+      cache_control: { type: "ephemeral" },
+    },
+  ];
+}
+
+export function buildUserMessage(opts: {
+  domain: string;
+  difficulty: Difficulty;
+  count: number;
+  alreadyGenerated: Question[];
+}): string {
+  const lines = [
+    `COMPETENCY_DOMAIN: ${opts.domain}`,
+    `DIFFICULTY: ${opts.difficulty}`,
+    `NUM_QUESTIONS: ${opts.count}`,
+  ];
+
+  if (opts.alreadyGenerated.length > 0) {
+    lines.push(
+      "",
+      "These items already exist for this sub-skill. Cover different material and different failure modes — do not restate them with new wording:",
+      ...opts.alreadyGenerated.map((q) => `- ${q.question}`),
+    );
+  }
+
+  return lines.join("\n");
+}
