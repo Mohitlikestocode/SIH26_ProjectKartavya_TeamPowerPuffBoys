@@ -1,58 +1,35 @@
 # Postgres setup — from zero to a working backend
 
-Companion to [`prompt.md`](prompt.md). Follow this top to bottom on Windows. Two paths are
-given for step 1 (Docker — recommended, or a native install); everything after that is
-identical either way.
+Companion to [`prompt.md`](prompt.md). Native Postgres install (no Docker, no
+virtualization/WSL2 needed) — follow top to bottom on Windows.
 
 ---
 
 ## 1. Install Postgres
 
-### Option A — Docker (recommended)
-
-1. Install **Docker Desktop for Windows**: https://www.docker.com/products/docker-desktop/
-   - Run the installer, accept the WSL2 backend prompt if asked (Docker Desktop sets up
-     WSL2 automatically on modern Windows 10/11 — you don't need to configure this
-     yourself).
-   - Restart if the installer asks you to.
-2. Launch Docker Desktop and wait for the whale icon in the system tray to stop animating
-   (that means the engine is up). Confirm from a terminal:
-   ```bash
-   docker --version
-   docker ps
-   ```
-   `docker ps` should print an empty table (no error) — that means the daemon is reachable.
-3. Start a Postgres container matching the connection string already checked into
-   `backend/.env.example`:
-   ```bash
-   docker run --name kartavya-postgres -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=kartavya -p 5432:5432 -d postgres:16
-   ```
-4. Confirm it's actually running (not restarting/crashed):
-   ```bash
-   docker ps
-   ```
-   You should see `kartavya-postgres` with a status like `Up 10 seconds`. If it's not there,
-   check `docker logs kartavya-postgres` for why it exited.
-
-To stop/start it later without losing data: `docker stop kartavya-postgres` /
-`docker start kartavya-postgres`. To wipe it completely and start over:
-`docker rm -f kartavya-postgres` then repeat step 3.
-
-### Option B — Native Postgres install (skip if you did Option A)
-
 1. Download the Windows installer from https://www.postgresql.org/download/windows/
-   (EnterpriseDB's installer is the standard one).
+   (EnterpriseDB's installer is the standard one — click "Download the installer").
 2. Run it. When prompted:
-   - Superuser password: set it to `postgres` (or pick your own — just remember it for
-     step 2 below).
-   - Port: leave at the default `5432`.
-   - Uncheck Stack Builder at the end unless you want it.
-3. After install, create the database the app expects. Open **SQL Shell (psql)** from the
-   Start menu (accept the defaults for host/port/user, enter your password when prompted),
-   then run:
-   ```sql
-   CREATE DATABASE kartavya;
-   ```
+   - Components: leave everything checked (PostgreSQL Server, pgAdmin 4, Command Line
+     Tools) — you don't strictly need pgAdmin but it's a handy GUI later if you want one.
+   - Data directory / port: leave at the defaults (port `5432`).
+   - **Superuser password**: set it to `postgres` (or pick your own — just remember it
+     for step 2 below, since it has to match `DATABASE_URL` exactly).
+   - Locale: leave at default.
+   - Uncheck "Launch Stack Builder" at the end unless you want it (not needed here).
+3. Let it finish. The installer also registers a Windows service (something like
+   `postgresql-x64-16`) that starts Postgres automatically on boot — you shouldn't need
+   to start anything manually.
+4. Create the database the app expects. Open **SQL Shell (psql)** from the Start menu:
+   - It'll prompt `Server [localhost]:`, `Database [postgres]:`, `Port [5432]:`,
+     `Username [postgres]:` — just press Enter through all of these to accept the
+     defaults.
+   - `Password for user postgres:` — enter the password you set in step 2.
+   - At the `postgres=#` prompt, run:
+     ```sql
+     CREATE DATABASE kartavya;
+     ```
+   - You should see `CREATE DATABASE`. Type `\q` to exit.
 
 ---
 
@@ -64,13 +41,13 @@ To stop/start it later without losing data: `docker stop kartavya-postgres` /
    cp .env.example .env
    ```
    (PowerShell: `copy .env.example .env`)
-3. Open `.env` and check `DATABASE_URL`. If you used Docker Option A exactly as written
-   above, the default already matches and you can skip editing it:
+3. Open `.env` and check `DATABASE_URL`. If your superuser password is `postgres` (as
+   set in step 1), the default already matches and you can skip editing it:
    ```
    DATABASE_URL="postgresql://postgres:postgres@localhost:5432/kartavya?schema=public"
    ```
-   If you used a different password (native install) or a different port, edit this line
-   to match: `postgresql://<user>:<password>@localhost:<port>/kartavya?schema=public`.
+   If you chose a different password, edit this line to match:
+   `postgresql://postgres:<your-password>@localhost:5432/kartavya?schema=public`.
 
 ---
 
@@ -98,9 +75,10 @@ folder exists yet. Prisma will:
   (`User`, `CompetencyDomain`, `SubSkill`, `TargetRole`, `Assessment`, `Attempt`,
   `Session`, `Course`, `TrainingProgramme`, etc.)
 
-If this hangs or errors with **"Can't reach database server"**: Postgres isn't actually
-up — go back to step 1 and confirm `docker ps` shows it running (or the native service is
-started via Windows Services).
+If this hangs or errors with **"Can't reach database server"**: the Postgres service
+isn't actually running — open Windows **Services** (Win+R → `services.msc`), find
+`postgresql-x64-<version>`, and confirm its status is "Running" (right-click → Start if
+not).
 
 ---
 
@@ -130,7 +108,7 @@ npm run prisma:studio
 ```
 Opens a browser GUI (usually `http://localhost:5555`) where you can click through every
 table and see real rows. Fastest way to confirm migrate+seed genuinely worked before
-moving on.
+moving on. (pgAdmin 4, installed alongside Postgres in step 1, works too if you prefer it.)
 
 ---
 
@@ -175,10 +153,10 @@ Client and run through every folder to exercise each endpoint at least once.
 
 | Symptom | Likely cause |
 |---|---|
-| `password authentication failed for user "postgres"` | `.env`'s `DATABASE_URL` password doesn't match what the container/install actually has. Re-check step 1 vs step 2. |
-| `Can't reach database server at localhost:5432` | Postgres isn't running. `docker ps` (Docker) or check the "postgresql-x64-16" service in Windows Services (native install). |
-| Port `5432` already in use when starting the container | Something else is already listening on it — `docker ps -a` to find old containers, or a native Postgres service running alongside Docker. Either stop the conflicting one or map the container to a different host port (`-p 5433:5432`) and update `DATABASE_URL`'s port to match. |
-| `prisma migrate dev` complains about drift or existing tables | The database isn't actually empty — probably a stale container from an earlier attempt. `docker rm -f kartavya-postgres`, redo step 1's container creation, then retry step 4. |
+| `password authentication failed for user "postgres"` | `.env`'s `DATABASE_URL` password doesn't match the one you set during install. Re-check step 1 vs step 2. |
+| `Can't reach database server at localhost:5432` | The Postgres Windows service isn't running — `services.msc`, find `postgresql-x64-<version>`, start it. |
+| Port `5432` already in use | Something else is already listening on it (another Postgres install, a leftover WSL/Docker instance from earlier attempts). Check what's bound to the port (`netstat -ano \| findstr 5432` in PowerShell) and stop it, or change Postgres's port in its config and update `DATABASE_URL` to match. |
+| `prisma migrate dev` complains about drift or existing tables | The `kartavya` database already has tables in it from an earlier attempt. Easiest fix: drop and recreate it — back in `psql`, run `DROP DATABASE kartavya;` then `CREATE DATABASE kartavya;`, then retry step 4. |
 | Everything above works but `npm run seed` errors partway | Re-run it — it's idempotent, so it'll skip what already succeeded and can be safely retried after fixing whatever the error message points at. |
 
 ## Using a managed/cloud Postgres instead (Neon, Supabase, Railway, etc.)
