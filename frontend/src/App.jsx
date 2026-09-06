@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
-import { uploadDocument, generateForDocument, api } from "./lib/api";
+import { uploadDocument, generateForDocument, api, assistantChat, assistantTranscribe, assistantSpeak } from "./lib/api";
 import LiveAssessmentRunner from "./pages/LiveAssessmentRunner";
 import { buildLocalDiagnostic, scoreLocalDiagnostic, scoreLocalSimulation, LOCAL_SIMULATION } from "./lib/localAssessments";
 import {
@@ -65,6 +65,11 @@ const initialState = {
   // above, kept separate since a learner can be mid-diagnostic and mid-simulation independently.
   simulationDone: false, simAssessment: null, simAttemptId: null,
   simLoading: false, simLoadError: null,
+  // Real assistant conversation (text + speech, Sarvam) — same real-state pattern as the
+  // upload/generate fields above. assistTurns holds live {q,a} pairs, appended after the
+  // static ASSIST seed lines from data.js rather than replacing them.
+  assistTurns: [], assistInput: "", assistBusy: false, assistError: null,
+  assistRecording: false, assistTranscribing: false, assistPlayingIdx: null, assistSpeechLang: null,
 };
 
 function levels(state) {
@@ -90,6 +95,10 @@ export default function App() {
   const setState = (patch) => {
     setStateRaw((prev) => ({ ...prev, ...(typeof patch === "function" ? patch(prev) : patch) }));
   };
+  // Imperative mic-recording state — a ref, not React state, since neither the recorder instance
+  // nor its accumulating audio chunks should trigger a render on their own.
+  const recorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   const st = state;
   const L = LOGIN[st.role || st.loginTab];
@@ -451,6 +460,70 @@ export default function App() {
     ? new Date(realLastSubmittedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
     : "—";
 
+  // --- Assistant: text + speech (Sarvam) --------------------------------
+  const doAssistSend = async () => {
+    const text = st.assistInput.trim();
+    if (!text || st.assistBusy) return;
+    setState({ assistBusy: true, assistError: null, assistInput: "" });
+    // Flatten prior turns into the {role, content} pairs the backend expects — each past turn
+    // contributes both sides of the exchange, in order.
+    const history = st.assistTurns.flatMap((turn) => [
+      { role: "user", content: turn.q },
+      { role: "assistant", content: turn.a },
+    ]);
+    try {
+      const { reply } = await assistantChat(text, history);
+      setState((s) => ({ assistTurns: [...s.assistTurns, { q: text, a: reply }], assistBusy: false }));
+    } catch (err) {
+      setState({ assistBusy: false, assistError: err.message, assistInput: text });
+    }
+  };
+
+  const doAssistVoiceToggle = async () => {
+    if (st.assistRecording) {
+      recorderRef.current?.stop(); // onstop below does the rest
+      return;
+    }
+    setState({ assistError: null });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setState({ assistRecording: false, assistTranscribing: true });
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        try {
+          const { transcript, languageCode } = await assistantTranscribe(blob);
+          setState({ assistTranscribing: false, assistInput: transcript, assistSpeechLang: languageCode || null });
+        } catch (err) {
+          setState({ assistTranscribing: false, assistError: err.message });
+        }
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setState({ assistRecording: true });
+    } catch (err) {
+      setState({ assistError: "Microphone unavailable: " + err.message });
+    }
+  };
+
+  const doPlayReply = async (idx, text) => {
+    if (st.assistPlayingIdx === idx) return;
+    setState({ assistPlayingIdx: idx, assistError: null });
+    try {
+      const blob = await assistantSpeak(text, st.assistSpeechLang || undefined);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => { setState({ assistPlayingIdx: null }); URL.revokeObjectURL(url); };
+      audio.onerror = () => { setState({ assistPlayingIdx: null, assistError: "Could not play the reply." }); URL.revokeObjectURL(url); };
+      await audio.play();
+    } catch (err) {
+      setState({ assistPlayingIdx: null, assistError: err.message });
+    }
+  };
+
   const v = {
     baseSize: (16 * st.scale).toFixed(1) + "px",
     contrastFilter: st.contrast ? "contrast(1.22) saturate(0.85)" : "none",
@@ -471,7 +544,25 @@ export default function App() {
     assistantOpen: st.assistant,
     openAssistant: () => setState({ assistant: true }),
     closeAssistant: () => setState({ assistant: false }),
-    assistLines: ASSIST,
+    // Seed demo lines first, then real conversation appended below them.
+    // Seed demo lines first, then real conversation appended below them. Every line — seed or
+    // real — can be synthesized on demand; TTS doesn't care where the text came from.
+    assistLines: [...ASSIST, ...st.assistTurns].map((turn, i) => ({
+      q: turn.q, a: turn.a,
+      isPlaying: st.assistPlayingIdx === i,
+      onPlay: () => doPlayReply(i, turn.a),
+    })),
+    assistInput: st.assistInput,
+    onAssistInput: (e) => setState({ assistInput: e.target.value }),
+    onAssistKeyDown: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAssistSend(); } },
+    onAssistSend: doAssistSend,
+    canAssistSend: st.assistInput.trim().length > 0 && !st.assistBusy,
+    assistBusy: st.assistBusy,
+    assistRecording: st.assistRecording,
+    assistTranscribing: st.assistTranscribing,
+    onAssistVoiceToggle: doAssistVoiceToggle,
+    assistVoiceLabel: st.assistRecording ? "Stop" : st.assistTranscribing ? "Transcribing…" : "Voice",
+    assistError: st.assistError,
     isLanding: st.screen === "landing", isSignin: st.screen === "signin",
     isDash: st.screen === "ldash", isCat: st.screen === "lcat", isPath: st.screen === "lpath",
     isAssess: st.screen === "lassess", isRunner: st.screen === "runner", isScoring: st.screen === "scoring",
