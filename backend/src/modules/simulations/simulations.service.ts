@@ -193,6 +193,19 @@ export async function createSimulationAssessment(createdById: string, scenarioId
   });
 }
 
+// Mirrors assessments.service.ts's getOrCreateDiagnostic: the learner-facing onboarding gate
+// needs *some* real simulation Assessment to attempt without waiting on a trainer to create one
+// first, same as the MCQ side has a system-owned diagnostic it can fall back to.
+export async function getOrCreateDefaultSimulation(systemUserId: string) {
+  const [firstScenario] = Object.values(SCENARIOS);
+  const existing = await prisma.assessment.findFirst({
+    where: { type: "simulation", title: firstScenario.title },
+  });
+  if (existing) return existing;
+
+  return createSimulationAssessment(systemUserId, firstScenario.id);
+}
+
 // Walks a submitted path (start -> ... -> terminal) against the assessment's
 // stored ScenarioGraph, validating each step actually follows the graph's
 // edges (no skipping ahead / inventing outcomes), and returns the terminal

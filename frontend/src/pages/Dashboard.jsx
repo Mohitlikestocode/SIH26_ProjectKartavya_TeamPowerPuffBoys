@@ -63,6 +63,16 @@ export default function Dashboard({ v }) {
         </div>
       )}
 
+      {v.assessed && v.needsSimulation && (
+        <div style={css("background:#FFF9F2; border:1px solid #F3CFA6; border-left:5px solid #F58220; padding:18px 22px; margin-top:20px; display:flex; justify-content:space-between; gap:20px; align-items:center; flex-wrap:wrap")}>
+          <div style={css("flex:1; min-width:260px")}>
+            <h2 style={css("font-family:'Poppins',sans-serif; font-size:17px; font-weight:700; color:#123E7C; margin:0 0 4px")}>One more step: a situation simulation</h2>
+            <p style={css("font-size:13.5px; line-height:1.5; color:#3B424E; margin:0")}>The MCQ diagnostic is done — a short branching work-scenario simulation completes your baseline competency profile.</p>
+          </div>
+          <button onClick={v.startSimulation} style={css("font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:12px 20px; border:0; background:#F58220; color:#3D1D00; border-radius:8px; white-space:nowrap")}>Start simulation</button>
+        </div>
+      )}
+
       <div style={css("display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr)); gap:1px; background:#DDE1E7; border:1px solid #DDE1E7; margin-top:20px")}>
         <div style={css("background:#fff; padding:16px 20px")}>
           <div style={css("font-size:11px; color:#7A8492; font-weight:600; letter-spacing:0.04em; text-transform:uppercase")}>Overall gap index</div>

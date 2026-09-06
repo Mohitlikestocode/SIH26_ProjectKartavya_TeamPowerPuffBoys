@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { css } from "../lib/css";
 import { D as DOMAINS } from "../data";
 import { listQuestions, approveQuestion, rejectQuestion, editQuestion, createQuestion, ApiError } from "../lib/api";
+import TrainerCreateTest from "./TrainerCreateTest";
 
 // Same structural invariant as backend/src/lib/mcq/deriveCorrectOption.ts: for a plain stem,
 // exactly one option's isTrueStatement must be true; for a negated stem, exactly one must be
@@ -269,9 +270,12 @@ export default function TrainerStudio({ v }) {
           <h1 style={css("font-family:'Poppins',sans-serif; font-size:28px; font-weight:700; color:#123E7C; margin:0")}>Review draft items</h1>
           <div style={css("font-size:13.5px; color:#5A6C86; margin-top:4px")}>{total} draft question(s) awaiting review · {sessionCounts.approved} approved and {sessionCounts.rejected} rejected this session</div>
         </div>
-        <button onClick={() => setCreateOpen((o) => !o)} style={css("font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:10px 16px; border:0; background:#F58220; color:#fff; border-radius:24px; white-space:nowrap")}>
-          {createOpen ? "Close" : "+ Write a question"}
-        </button>
+        <div style={css("display:flex; align-items:center")}>
+          <TrainerCreateTest />
+          <button onClick={() => setCreateOpen((o) => !o)} style={css("font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:10px 16px; border:0; background:#F58220; color:#fff; border-radius:24px; white-space:nowrap")}>
+            {createOpen ? "Close" : "+ Write a question"}
+          </button>
+        </div>
       </div>
 
       {createOpen && (

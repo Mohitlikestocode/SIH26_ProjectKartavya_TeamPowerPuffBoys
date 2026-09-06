@@ -66,16 +66,25 @@ Rules you must follow exactly:
 // a hard per-call override — the caller (see questions.service.ts) tracks the running negated/total
 // ratio for the current generation batch and sets this once the ratio hits the target ceiling,
 // which reliably keeps the batch-level ratio in range.
-export function buildMcqMessages(chunkText: string, heading: string | null, forceAffirmative = false) {
+export function buildMcqMessages(
+  chunkText: string,
+  heading: string | null,
+  forceAffirmative = false,
+  stageIntent?: string,
+) {
   const context = heading ? `Section: ${heading}\n\n${chunkText}` : chunkText;
   const stemInstruction = forceAffirmative
     ? `\n\nIMPORTANT: This batch has already used enough negated/EXCEPT-style questions for now. Write this one with a straightforward AFFIRMATIVE stem only (e.g. "Which of the following is...") — do not use "NOT" or "EXCEPT" phrasing, and set "isNegatedStem" to false.`
     : "";
+  // Ported from mcq-generator/src/stages.ts's STAGE_PROFILES — the two-stage diagnostic design
+  // (broad screening vs. specific deep-dive) changes what a good question looks like, so it's
+  // injected as generation intent, not just a different item count.
+  const stageInstruction = stageIntent ? `\n\n${stageIntent}` : "";
   return [
     { role: "system" as const, content: SYSTEM_PROMPT },
     {
       role: "user" as const,
-      content: `Generate one MCQ from this training content passage:\n\n"""\n${context}\n"""${stemInstruction}`,
+      content: `Generate one MCQ from this training content passage:\n\n"""\n${context}\n"""${stemInstruction}${stageInstruction}`,
     },
   ];
 }
