@@ -63,7 +63,9 @@ export interface SynthesizeResult {
   mimeType: string;
 }
 
-const MAX_TTS_CHARS = 1500; // bulbul:v2's limit — the tighter of the two model versions
+// bulbul:v2 was Sarvam's default when this was written; it was deprecated shortly after (confirmed
+// live — Sarvam now rejects it with 400 "please use bulbul:v3 instead"). v3's limit is 2500 chars.
+const MAX_TTS_CHARS = 2500;
 
 /**
  * Text-to-speech via Sarvam's Bulbul model. Unlike STT, TTS has no auto-detect — the target
@@ -83,7 +85,7 @@ export async function synthesizeSpeech(text: string, languageCode = "en-IN"): Pr
     body: JSON.stringify({
       text: trimmed,
       language_code: languageCode,
-      model: "bulbul:v2",
+      model: "bulbul:v3",
       output_audio_codec: "wav",
     }),
   });
