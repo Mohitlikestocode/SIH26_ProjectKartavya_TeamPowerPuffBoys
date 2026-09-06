@@ -1,3 +1,13 @@
+---
+title: Kartavya
+emoji: 🧭
+colorFrom: blue
+colorTo: orange
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # कर्तव्य · Kartavya
 
 ### AI-Enabled Skill Intelligence & Learning Platform for India's Official Statistical System

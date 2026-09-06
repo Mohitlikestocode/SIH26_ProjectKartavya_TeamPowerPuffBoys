@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
-import { uploadDocument, generateForDocument, api, ApiError } from "./lib/api";
+import { uploadDocument, generateForDocument, api } from "./lib/api";
+import LiveAssessmentRunner from "./pages/LiveAssessmentRunner";
+import { buildLocalDiagnostic, scoreLocalDiagnostic, scoreLocalSimulation, LOCAL_SIMULATION } from "./lib/localAssessments";
 import {
   D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
   CATALOGUE, INPROGRESS, CERTS, HEAT, RAMP, EFFECT, EMERGING,
@@ -55,10 +57,14 @@ const initialState = {
   // MCQ_CONTRACT_PROPOSAL.md / the Phase-3-was-replaced context). authToken/authUser come from a
   // real POST /api/auth/login call made at sign-in time using the seeded demo credentials for
   // whichever role tab is selected — the rest of the app stays the pre-existing mock either way.
-  authToken: null, authUser: null, authError: null,
+  authToken: null, authUser: null, authError: null, authBusy: false,
   diagAssessment: null, diagLoadError: null, diagLoading: false,
   attempt: null, attemptAnswers: {}, runnerCursor: 0,
   attemptSubmitting: false, attemptSubmitError: null, attemptResult: null,
+  // Second real assessment (the situation simulation) — same pattern as the diagnostic fields
+  // above, kept separate since a learner can be mid-diagnostic and mid-simulation independently.
+  simulationDone: false, simAssessment: null, simAttemptId: null,
+  simLoading: false, simLoadError: null,
 };
 
 function levels(state) {
@@ -262,16 +268,62 @@ export default function App() {
   const DEMO_LOGIN_EMAIL = { learner: "learner@kartavya.gov.in", trainer: "trainer@kartavya.gov.in", admin: "admin@kartavya.gov.in" };
   const signIn = () => {
     const r = st.loginTab;
+    const mockLandingScreen = r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics";
+    // No backend deployed yet for this prototype (frontend-only phase) — always land the demo on
+    // its screen instead of dead-ending on a login error. When a real backend IS reachable, this
+    // still authenticates for real and layers live data on top; when it isn't, it falls back to
+    // exactly the same polished, fully-functional local-mock experience the app always had.
     api.login(DEMO_LOGIN_EMAIL[r], "password123")
       .then(({ token, user }) => {
         setState({
-          role: r, acct: false, prefs: false,
-          screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics",
+          role: r, acct: false, prefs: false, screen: mockLandingScreen,
           authToken: token, authUser: user, authError: null,
         });
         loadEmployeeDashboard(token);
+        if (r === "learner") checkSimulationStatus(token);
       })
-      .catch((err) => setState({ authToken: null, authUser: null, authError: err.message, screen: "signin" }));
+      .catch(() => {
+        setState({ role: r, acct: false, prefs: false, screen: mockLandingScreen, authToken: null, authUser: null, authError: null });
+      });
+  };
+
+  // Second half of the "two kinds of tests" onboarding: a situation simulation, alongside the MCQ
+  // diagnostic above. Checked once at login (so a learner who already completed it isn't asked
+  // again) via the same GET /api/attempts/mine the QR-join gate uses, and updated locally once a
+  // simulation attempt is actually submitted in this session.
+  const checkSimulationStatus = (token) => {
+    api.getMyAttempts(token)
+      .then((attempts) => {
+        const done = attempts.some((a) => a.status === "submitted" && a.assessment.type === "simulation");
+        setState({ simulationDone: done });
+      })
+      .catch(() => {});
+  };
+
+  // No-auth, no-backend fallback: whenever there's no token (this prototype phase has no backend
+  // deployed at all), both assessments run entirely client-side against localAssessments.js
+  // instead of erroring out with "Not signed in." — same UI, same screens, real backend used
+  // instead the moment one is actually reachable (see signIn() above).
+  const startSimulation = () => {
+    const token = st.authToken;
+    setState({ screen: "real-simulation", simLoadError: null, simLoading: true, simAssessment: null, simAttemptId: null });
+    if (!token) {
+      const localAssessment = { type: "simulation", title: LOCAL_SIMULATION.title, isProctored: false, scenario: LOCAL_SIMULATION };
+      setState({ simAssessment: localAssessment, simAttemptId: "local", simLoading: false });
+      return;
+    }
+    api.getDefaultSimulation(token)
+      .then((assessment) => api.startAttempt(token, assessment.id).then((attempt) => ({ assessment, attempt })))
+      .then(({ assessment, attempt }) => setState({ simAssessment: assessment, simAttemptId: attempt.id, simLoading: false }))
+      .catch((err) => setState({ simLoading: false, simLoadError: err.message }));
+  };
+
+  const onSimulationSubmitted = (result) => {
+    // Result.jsx is diagnostic-shaped (per-question results[]), which a simulation doesn't have —
+    // it still renders sensibly off just perDomainScore/perSubSkillScore/score, so it's reused
+    // here rather than building a second results page for one extra assessment type.
+    setState({ simulationDone: true, attemptResult: result, screen: "lresult" });
+    if (st.authToken) loadEmployeeDashboard(st.authToken); // simulation feeds competency scores too
   };
 
   // Real diagnostic-attempt flow. GET /api/assessments/diagnostic + POST /api/attempts (which
@@ -284,7 +336,7 @@ export default function App() {
       attemptSubmitError: null, diagLoadError: null, diagLoading: true,
     });
     if (!token) {
-      setState({ diagLoading: false, diagLoadError: st.authError || "Not signed in." });
+      setState({ diagAssessment: buildLocalDiagnostic(), attempt: { id: "local" }, diagLoading: false });
       return;
     }
     api.getDiagnostic(token)
@@ -304,9 +356,16 @@ export default function App() {
   const submitDiagnostic = () => {
     const token = st.authToken;
     const attemptId = st.attempt?.id;
-    if (!token || !attemptId) return;
+    if (!attemptId) return;
     const answers = Object.entries(st.attemptAnswers).map(([questionId, selectedIndex]) => ({ questionId, selectedIndex }));
     setState({ attemptSubmitting: true, attemptSubmitError: null, screen: "scoring" });
+
+    if (!token) {
+      const result = scoreLocalDiagnostic(st.diagAssessment, st.attemptAnswers);
+      setTimeout(() => setState({ attemptSubmitting: false, attemptResult: result, screen: "lresult" }), 1000);
+      return;
+    }
+
     api.submitAttempt(token, attemptId, answers)
       .then((result) => {
         setState({ attemptSubmitting: false, attemptResult: result, screen: "lresult" });
@@ -380,7 +439,9 @@ export default function App() {
   // "Assessed" now means "has a real submitted/kicked attempt on record" — gapMap itself is
   // always non-empty once a target role is set (current defaults to 0 per sub-skill), so it can't
   // be used as the "have they actually taken anything" signal.
-  const realAssessed = (st.employeeDashboard?.progressHistory?.length ?? 0) > 0;
+  // With no backend (this prototype phase), employeeDashboard never loads — "assessed" instead
+  // reflects the local, in-session mock diagnostic result so the dashboard still unlocks properly.
+  const realAssessed = (st.employeeDashboard?.progressHistory?.length ?? 0) > 0 || (!st.authToken && !!st.attemptResult);
   const realTargetRoleTitle = st.employeeDashboard?.targetRole?.title ?? t.name;
   const realProgressHistory = st.employeeDashboard?.progressHistory ?? [];
   const realLastSubmittedAt = realProgressHistory.length
@@ -417,6 +478,9 @@ export default function App() {
     isResult: st.screen === "lresult", isUpload: st.screen === "tupload", isStudio: st.screen === "tstudio",
     isSessions: st.screen === "tsessions", isAnalytics: st.screen === "oanalytics",
     isReports: st.screen === "oreports", isSystem: st.screen === "system",
+    isRealSimulation: st.screen === "real-simulation",
+    needsSimulation: !st.simulationDone,
+    startSimulation, simLoading: st.simLoading, simLoadError: st.simLoadError,
     isHindi: st.lang === "HI",
     assessed: realAssessed, notAssessed: !realAssessed,
     tabLearner: () => setState({ loginTab: "learner" }), tabTrainer: () => setState({ loginTab: "trainer" }), tabAdmin: () => setState({ loginTab: "admin" }),
@@ -424,7 +488,9 @@ export default function App() {
     tabTFg: tt.fg, tabTBorder: tt.border, tabTW: tt.w, tabTBg: tt.bg,
     tabAFg: ta.fg, tabABorder: ta.border, tabAW: ta.w, tabABg: ta.bg,
     loginRoleTitle: L.title, loginRoleNote: L.note, loginRoleInitial: L.initial, loginRoleColor: L.color,
-    loginIdLabel: L.idLabel, loginIdValue: L.idValue, doSignIn: signIn,
+    loginIdLabel: L.idLabel, loginIdValue: L.idValue,
+    doSignIn: signIn, signInBusy: st.authBusy, signInError: st.authError,
+    signInLabel: st.authBusy ? "Signing in…" : "Login",
     onTargetSelect: (e) => setState({ target: parseInt(e.target.value, 10) }),
     targetIdx: String(st.target), targetName: t.name, targetTrack: t.track, targetNote: t.note,
     targetReqs: D.map((d, i) => ({ label: DOM[d].label, color: DOM[d].color, value: t.req[i].toFixed(1), pct: (t.req[i] / 5 * 100).toFixed(0) + "%" })),
@@ -578,6 +644,22 @@ export default function App() {
         <div style={css("max-width:1500px; margin:0 auto; padding:0 32px 72px")}>
           {v.isLanding && <Landing v={v} />}
           {v.isSignin && <Signin v={v} />}
+          {v.isRealSimulation && (
+            <div>
+              <div style={css("font-size:12.5px; color:#7A8AA3; margin-bottom:10px")}>Situation simulation — the second half of your baseline assessment, alongside the MCQ diagnostic.</div>
+              {v.simLoading && <div style={css("padding:40px; text-align:center; color:#5A6472")}>Loading…</div>}
+              {v.simLoadError && <div style={css("color:#991B1B; font-size:13px")}>{v.simLoadError}</div>}
+              {st.simAssessment && (
+                <LiveAssessmentRunner
+                  assessment={st.simAssessment}
+                  attemptId={st.simAttemptId}
+                  token={st.authToken}
+                  onSubmitted={onSimulationSubmitted}
+                  localScorer={(path) => scoreLocalSimulation(LOCAL_SIMULATION, path)}
+                />
+              )}
+            </div>
+          )}
           {v.isDash && <Dashboard v={v} />}
           {v.isCat && <Catalogue v={v} />}
           {v.isRunner && <AssessmentRunner v={v} />}
