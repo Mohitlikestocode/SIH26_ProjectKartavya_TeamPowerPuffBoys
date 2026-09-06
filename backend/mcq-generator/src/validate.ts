@@ -1,4 +1,4 @@
-import type { Question } from "./schema";
+import type { FreeTextItem, Question } from "./schema";
 
 // Structured outputs already guarantee the *shape* of every item. These checks
 // cover the rules a JSON schema cannot express — the ones that decide whether
@@ -93,6 +93,110 @@ export function validate(questions: Question[], requestedDomain: string): Valida
       warnings.push(
         `Answer key is skewed: ${topCount} of ${kept.length} items are "${topKey}". Shuffle option order before publishing, or a learner can score by picking one letter.`,
       );
+    }
+  }
+
+  return { kept, rejected, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// Written-answer items.
+//
+// The rubric is the thing being checked here, not the prose. A weak scenario
+// produces a weak item; a weak rubric produces wrong marks that look right, so
+// it gets the stricter treatment.
+// ---------------------------------------------------------------------------
+
+export interface FreeTextValidationReport {
+  kept: FreeTextItem[];
+  rejected: { item: FreeTextItem; reason: string }[];
+  warnings: string[];
+}
+
+const MIN_CRITERIA = 3;
+const MAX_CRITERIA = 5;
+
+// A claim short enough to be a keyword is short enough to be gamed. This is a
+// heuristic, not a proof — it flags for review rather than rejecting.
+const SHORT_CLAIM_CHARS = 45;
+const KEYWORD_SHAPED = /^\s*(mentions?|names?|refers?\s+to|uses?\s+the\s+term|includes?\s+the\s+word)\b/i;
+
+function freeTextItemError(item: FreeTextItem): string | undefined {
+  if (!item.scenario.trim()) return "has an empty scenario";
+  if (!item.question.trim()) return "has an empty question";
+  if (!item.reference_answer.trim()) {
+    return "has no reference_answer, so there is nothing to show the learner and nothing to grade against";
+  }
+
+  if (item.criteria.length < MIN_CRITERIA) {
+    return `has ${item.criteria.length} criteria, fewer than the ${MIN_CRITERIA} needed to localise a misconception`;
+  }
+  if (item.criteria.length > MAX_CRITERIA) {
+    return `has ${item.criteria.length} criteria, more than the ${MAX_CRITERIA} that can be marked reliably`;
+  }
+
+  const keys = item.criteria.map((c) => c.key);
+  if (new Set(keys).size !== keys.length) return "has duplicate criterion keys";
+
+  for (const c of item.criteria) {
+    if (!c.claim.trim()) return `criterion ${c.key} has an empty claim`;
+    if (!c.met_example.trim()) return `criterion ${c.key} has no met_example`;
+    if (!c.not_met_example.trim()) return `criterion ${c.key} has no not_met_example`;
+    if (normalise(c.met_example) === normalise(c.not_met_example)) {
+      return `criterion ${c.key} has identical met and not_met examples, so it cannot discriminate`;
+    }
+  }
+
+  const claims = item.criteria.map((c) => normalise(c.claim));
+  if (new Set(claims).size !== claims.length) return "has two criteria with the same claim";
+
+  return undefined;
+}
+
+export function validateFreeText(items: FreeTextItem[], requestedDomain: string): FreeTextValidationReport {
+  const kept: FreeTextItem[] = [];
+  const rejected: FreeTextValidationReport["rejected"] = [];
+  const warnings: string[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of items) {
+    const error = freeTextItemError(item);
+    if (error) {
+      rejected.push({ item, reason: error });
+      continue;
+    }
+    if (seenIds.has(item.id)) {
+      rejected.push({ item, reason: `duplicate id "${item.id}"` });
+      continue;
+    }
+
+    seenIds.add(item.id);
+    kept.push(item);
+
+    // Gameability. A criterion satisfied by vocabulary rather than reasoning
+    // marks a bluffer correct, which is the failure this whole format exists
+    // to avoid — so it is surfaced for human review rather than dropped.
+    for (const c of item.criteria) {
+      if (KEYWORD_SHAPED.test(c.claim)) {
+        warnings.push(
+          `${item.id}/${c.key}: claim is phrased as "mentions X" — satisfiable by using the words without understanding them. Reword as a claim the answer must make.`,
+        );
+      } else if (c.claim.trim().length < SHORT_CLAIM_CHARS) {
+        warnings.push(
+          `${item.id}/${c.key}: claim is only ${c.claim.trim().length} characters — likely too thin to require reasoning. Check it cannot be satisfied by vocabulary alone.`,
+        );
+      }
+      if (!c.source_grounding.trim()) {
+        warnings.push(`${item.id}/${c.key}: no source_grounding, so a trainer cannot check the claim against the document.`);
+      }
+    }
+
+    const sentences = sentenceCount(item.scenario);
+    if (sentences < 2) {
+      warnings.push(`${item.id}: scenario is ${sentences} sentence(s) — likely too thin to require judgement.`);
+    }
+    if (item.domain.toLowerCase() !== requestedDomain.toLowerCase()) {
+      warnings.push(`${item.id}: tagged "${item.domain}" but "${requestedDomain}" was requested.`);
     }
   }
 

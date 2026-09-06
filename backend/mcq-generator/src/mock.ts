@@ -1,4 +1,4 @@
-import type { Batch, Difficulty } from "./schema";
+import type { Batch, Difficulty, FreeTextBatch, FreeTextItem } from "./schema";
 
 // Offline sample output, so the pipeline — validation, tag resolution, file
 // writing — can be demonstrated without a key, a network call, or a bill.
@@ -134,4 +134,99 @@ export function mockBatch(subSkill: string, difficulty: Difficulty, count: numbe
       : "Mock mode: deterministic sample output, no model call was made.";
 
   return { questions, notes };
+}
+
+// ---------------------------------------------------------------------------
+// Written-answer sample. Grounded in samples/sampling-module.txt, and written
+// to show what a rubric that resists gaming looks like — every claim is
+// something the answer must assert, tied where possible to a detail of the
+// scenario, and every not_met_example is a real misconception rather than an
+// empty sentence.
+// ---------------------------------------------------------------------------
+
+const FREE_TEXT_TEMPLATE: Omit<FreeTextItem, "domain" | "difficulty"> = {
+  id: "samp-frame-staleness-ft-01",
+  scenario:
+    "You are drawing a sample of registered manufacturing units in a district from a business register last updated four years ago. Field teams report that roughly a fifth of the selected units no longer operate at the listed address. Separately, they mention several sizeable units, described by neighbours as opened within the last two years, that do not appear on your list at all. Your deadline for the district estimate is in three weeks.",
+  question:
+    "Explain what these two field reports tell you about your sample, and set out what you would do before producing the district estimate.",
+  reference_answer:
+    "The two reports describe different errors that happen to have surfaced together. Units that have closed are over-coverage: they were on the frame but do not belong to the target population. Units operating but absent from the register are under-coverage: they belong to the population but were never eligible for selection. Over-coverage is visible from inside the survey, because an enumerator reaches the address and records the unit ineligible. Under-coverage is not, which makes it the more dangerous of the two, and here it involves large units whose absence would bias a manufacturing estimate substantially. Neither is repaired by weighting, because a non-response adjustment redistributes weight among units that were eligible, and neither of these groups was. Nor by drawing a larger sample, since additional units come from the same defective list. The correct response is to update or supplement the frame before estimating, most practically by listing operating units in the affected areas, and to state the residual coverage limitation alongside the estimate if the deadline does not permit a full update.",
+  criteria: [
+    {
+      key: "c1",
+      claim:
+        "Identifies the closed units and the unlisted units as two distinct errors, rather than treating both as the same problem of untraceable units",
+      met_example:
+        "These are two separate problems: the closed units are over-coverage, while the operating units missing from the register are under-coverage.",
+      not_met_example:
+        "In both cases the register is out of date, so I would treat all the unusable units the same way and adjust for them together.",
+      source_grounding: "Section 1 — over-coverage and under-coverage",
+    },
+    {
+      key: "c2",
+      claim:
+        "States that this is frame error rather than non-response, and that a weighting adjustment does not fix it",
+      met_example:
+        "A non-response adjustment would be wrong here, because these units were never eligible for selection in the first place — that is a frame problem, not a response problem.",
+      not_met_example:
+        "I would apply a non-response weighting adjustment to the units that did respond so the estimate remains unbiased.",
+      source_grounding: "Section 1 — non-response is a distinct problem and must not be confused with frame error",
+    },
+    {
+      key: "c3",
+      claim:
+        "Recognises that increasing the sample size does not compensate, because the additional units come from the same defective register",
+      met_example:
+        "Sampling more units would not help, since every extra unit is drawn from the same out-of-date list and reproduces the same gap.",
+      not_met_example:
+        "I would increase the sample size in the affected district so that the extra units make up for the ones we could not trace.",
+      source_grounding: "Section 1 — no increase in sample size compensates for under-coverage",
+    },
+    {
+      key: "c4",
+      claim:
+        "Proposes updating or supplementing the frame itself, and connects the urgency to the fact that the missing units are large ones",
+      met_example:
+        "I would arrange a listing operation in the affected areas before estimating, particularly because the units missing are large enough to move a manufacturing total.",
+      not_met_example:
+        "I would note the problem in the metadata and proceed with the estimate as planned to meet the deadline.",
+      source_grounding: "Section 1 — frame errors are corrected by updating or supplementing the frame",
+    },
+  ],
+};
+
+function freeTextPlaceholder(subSkill: string, index: number): Omit<FreeTextItem, "difficulty"> {
+  const slug = subSkill.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return {
+    id: `mock-ft-${slug}-${String(index + 1).padStart(2, "0")}`,
+    domain: subSkill,
+    scenario: `[MOCK PLACEHOLDER] Mock mode has no hand-written written-answer item for ${subSkill}. A real run generates a work scenario here, grounded in the source document.`,
+    question: `[MOCK PLACEHOLDER] Written item ${index + 1} for ${subSkill}. Run without --mock to generate real items.`,
+    reference_answer: "[MOCK PLACEHOLDER] A real run writes what a strong answer contains.",
+    criteria: [1, 2, 3].map((n) => ({
+      key: `c${n}`,
+      claim: `[MOCK PLACEHOLDER] Claim ${n} the answer must make.`,
+      met_example: `[MOCK PLACEHOLDER] A sentence satisfying claim ${n}.`,
+      not_met_example: `[MOCK PLACEHOLDER] A confident sentence that does not satisfy claim ${n}.`,
+      source_grounding: "[MOCK PLACEHOLDER] No source was read.",
+    })),
+  };
+}
+
+export function mockFreeTextBatch(subSkill: string, difficulty: Difficulty, count: number): FreeTextBatch {
+  if (subSkill.toLowerCase() !== "sampling") {
+    return {
+      items: Array.from({ length: count }, (_, i) => ({ ...freeTextPlaceholder(subSkill, i), difficulty })),
+      notes: `Mock mode: placeholder written items for ${subSkill}. Only "Sampling" has hand-written sample content.`,
+    };
+  }
+
+  const items = count >= 1 ? [{ ...FREE_TEXT_TEMPLATE, domain: subSkill, difficulty }] : [];
+  const notes =
+    count > 1
+      ? `Mock mode holds 1 sample written item for Sampling; ${count} were requested.`
+      : "Mock mode: deterministic sample written item, no model call was made.";
+
+  return { items, notes };
 }
