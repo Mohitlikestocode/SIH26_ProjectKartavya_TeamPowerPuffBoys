@@ -1,7 +1,37 @@
 import { Fragment } from "react";
 import { css } from "../lib/css";
+import { sectionsToCsv, downloadCsv, dateSlug } from "../lib/exportCsv";
 
 export default function AdminAnalytics({ v }) {
+  // "Export CSV" — dumps the three tables this screen shows (heatmap, training
+  // effectiveness, emerging skills) into one file, exactly as currently rendered.
+  const handleExport = () => {
+    const csv = sectionsToCsv([
+      {
+        title: "Competency heatmap — cadre x domain mean gap (0-5 scale)",
+        rows: [
+          ["Cadre / service", "Officials", "Statistical", "Technical", "Digital Governance", "Behavioural"],
+          ...v.heatRows.map((r) => [r.name, r.count, r.c0, r.c1, r.c2, r.c3]),
+        ],
+      },
+      {
+        title: "Training effectiveness — mean competency lift 90 days post-completion",
+        rows: [
+          ["Programme", "Source", "Completions", "Mean lift", "Lift percentile"],
+          ...v.effect.map((e) => [e.name, e.source, e.n, e.lift, e.pct]),
+        ],
+      },
+      {
+        title: "Emerging skill requirements — projected demand shift over 24 months",
+        rows: [
+          ["Skill", "Domain", "Projected demand shift"],
+          ...v.emerging.map((m) => [m.name, m.domain, m.delta]),
+        ],
+      },
+    ]);
+    downloadCsv(`kartavya-workforce-analytics_${dateSlug()}`, csv);
+  };
+
   return (
     <section style={css("padding:24px 0 0")}>
       <div style={css("display:flex; justify-content:space-between; align-items:flex-end; gap:20px; flex-wrap:wrap; margin-bottom:16px")}>
@@ -10,7 +40,7 @@ export default function AdminAnalytics({ v }) {
           <div style={css("font-size:13.5px; color:#5A6472; margin-top:4px")}>18,442 profiles · assessment coverage 71% · framework: MoSPI Competency Directory v3.1</div>
         </div>
         <div style={css("display:flex; gap:10px; flex-wrap:wrap")}>
-          <button style={css("font:inherit; font-size:13px; font-weight:600; cursor:pointer; padding:10px 14px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px")}>Export XLSX</button>
+          <button onClick={handleExport} style={css("font:inherit; font-size:13px; font-weight:600; cursor:pointer; padding:10px 14px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px")}>Export CSV</button>
           <button style={css("font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:10px 14px; border:0; background:#123E7C; color:#fff; border-radius:8px")}>Schedule report</button>
         </div>
       </div>

@@ -606,7 +606,7 @@ export default function Landing({ v }) {
             <p style={css("font-size:19px; line-height:1.6; color:#fff; margin:14px 0 0; font-weight:500")}>"A statistical system is only as strong as the competence of the officers who run it. Kartavya makes each officer's development plan explicit, measurable and tied to the work they actually do."</p>
             <div style={css("display:flex; align-items:center; gap:13px; margin-top:20px")}>
               <div style={css("width:60px; height:60px; border-radius:50%; background:#fff; padding:3px; flex-shrink:0")}>
-                <ImageSlot shape="circle" style={{ width: 54, height: 54 }} placeholder="Photo" />
+                <ImageSlot shape="circle" src="/secretary.png" alt="Secretary, MoSPI" style={{ width: 54, height: 54 }} placeholder="Photo" />
               </div>
               <div>
                 <div style={css("font-size:14.5px; font-weight:700; color:#fff")}>Secretary, MoSPI</div>
@@ -616,7 +616,7 @@ export default function Landing({ v }) {
           </div>
           <div style={css("min-height:250px; padding:16px; background:#0F3568; display:flex")}>
             <div style={css("flex:1; min-width:0; background:#fff; border-radius:12px; padding:6px; display:flex")}>
-              <ImageSlot shape="rounded" radius={8} style={{ width: "100%", minWidth: 0, minHeight: 218 }} placeholder="Drop a photo of a statistical office" />
+              <ImageSlot shape="rounded" radius={8} src="/National-Statistical-Office.webp" alt="National Statistical Office, India" style={{ width: "100%", minWidth: 0, minHeight: 218 }} placeholder="Drop a photo of a statistical office" />
             </div>
           </div>
         </div>
