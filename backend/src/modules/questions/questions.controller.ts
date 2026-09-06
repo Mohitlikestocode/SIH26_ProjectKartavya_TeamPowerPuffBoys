@@ -12,6 +12,24 @@ export async function generateForDocument(req: Request, res: Response, next: Nex
   }
 }
 
+const generateDiagnosticSchema = z.object({
+  documentId: z.string(),
+  stage: z.enum(["broad", "specific"]),
+  targetRoleId: z.string().optional(),
+  subSkillIds: z.array(z.string()).optional(),
+});
+
+export async function generateDiagnostic(req: Request, res: Response, next: NextFunction) {
+  try {
+    const parsed = generateDiagnosticSchema.safeParse(req.body);
+    if (!parsed.success) throw new ApiError(400, `Invalid request body: ${parsed.error.message}`);
+    const result = await service.generateDiagnosticBatch(parsed.data);
+    res.status(202).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 const statusEnum = z.enum(["draft", "approved", "rejected"]);
 
 const listQuerySchema = z.object({

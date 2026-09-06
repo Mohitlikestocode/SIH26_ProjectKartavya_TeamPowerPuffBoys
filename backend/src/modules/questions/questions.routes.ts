@@ -5,6 +5,7 @@ import { requireAdminIdentity } from "@/middleware/adminIdentity";
 export const questionsRouter = Router();
 
 questionsRouter.get("/", controller.list);
+questionsRouter.post("/diagnostic", requireAdminIdentity, controller.generateDiagnostic);
 questionsRouter.get("/:id", controller.getById);
 questionsRouter.post("/", requireAdminIdentity, controller.createManual);
 questionsRouter.patch("/:id", requireAdminIdentity, controller.edit);
