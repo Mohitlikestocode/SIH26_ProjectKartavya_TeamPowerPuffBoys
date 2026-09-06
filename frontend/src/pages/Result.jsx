@@ -44,7 +44,12 @@ export default function Result({ v }) {
             </div>
           </div>
           <div style={css("display:grid; gap:9px")}>
-            <button onClick={v.goDash} style={css("font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:12px 20px; border:0; background:#123E7C; color:#fff; border-radius:8px; white-space:nowrap")}>Back to dashboard</button>
+            {v.needsSimulation ? (
+              <button onClick={v.startSimulation} className="btn-accent" style={css("font:inherit; font-size:14px; font-weight:800; cursor:pointer; padding:12px 20px; border:0; background:#F58220; color:#3D1D00; border-radius:8px; white-space:nowrap")}>Continue to situation simulation</button>
+            ) : (
+              <button onClick={v.goHub} className="btn-accent" style={css("font:inherit; font-size:14px; font-weight:800; cursor:pointer; padding:12px 20px; border:0; background:#F58220; color:#3D1D00; border-radius:8px; white-space:nowrap")}>Continue to your Development Map</button>
+            )}
+            <button onClick={v.goDash} style={css("font:inherit; font-size:13.5px; font-weight:600; cursor:pointer; padding:11px 20px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px; white-space:nowrap")}>Back to dashboard</button>
           </div>
         </div>
 

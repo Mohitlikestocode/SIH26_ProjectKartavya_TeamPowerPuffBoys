@@ -64,3 +64,48 @@ export async function chatCompletion({
   if (!content) throw new Error("Sarvam chat completion returned no content.");
   return content;
 }
+
+export interface ChatTextParams {
+  messages: ChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
+}
+
+// Same endpoint as chatCompletion(), without response_format — for open-ended conversational
+// replies (the assistant chatbot) rather than the structured-JSON extraction chatCompletion()
+// is built for. Kept separate rather than making responseFormat optional on chatCompletion() so
+// neither caller's contract changes: generateMcq.ts still gets a schema-guaranteed response,
+// and this one gets plain text.
+export async function chatText({ messages, temperature = 0.5, maxTokens = 600 }: ChatTextParams): Promise<string> {
+  if (!env.sarvamEnabled) {
+    throw new Error("Sarvam LLM calls are disabled (set SARVAM_ENABLED=true and SARVAM_API_KEY to enable the assistant).");
+  }
+
+  const res = await fetch(`${env.sarvamBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.sarvamApiKey}`,
+      "api-subscription-key": env.sarvamApiKey,
+    },
+    body: JSON.stringify({
+      model: env.sarvamModel,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      // Chat replies should be direct, not preceded by hidden chain-of-thought eating the token
+      // budget — same reasoning as chatCompletion() above.
+      reasoning_effort: null,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Sarvam chat completion failed: ${res.status} ${res.statusText} — ${body}`);
+  }
+
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Sarvam chat completion returned no content.");
+  return content;
+}

@@ -2,6 +2,8 @@ import { prisma } from "../../config/db";
 import { ApiError } from "../../middleware/errorHandler";
 import type { AssessmentType, Assessment } from "@prisma/client";
 import { redactQuestionForDelivery, type StubMcqQuestion } from "../attempts/attempts.service";
+import { balancedDomainSample } from "../../lib/assessment/assembleQuestions";
+import { toAssessmentQuestions } from "../../lib/assessment/toAssessmentQuestions";
 
 // Every read path in this module is a pre-test view — a learner can reach these before ever
 // starting (or without ever starting) an attempt, so correctIndex/explanations must never appear
@@ -61,12 +63,19 @@ export async function listAssessments(createdById?: string) {
 
 const DIAGNOSTIC_TITLE = "Baseline Diagnostic";
 
-// Pulls a balanced set of sub-skills across all 4 domains for a first-time
-// user's onboarding test. Calls into the teammate's question bank by domain
-// tag once it exists — for now this assembles against a clearly-labelled
-// stub question set so the endpoint and downstream Attempt flow can be
-// wired and tested today (see prompt.md Phase 3 item 15).
-export async function getOrCreateDiagnostic(systemUserId: string) {
+// Role-scoped onboarding diagnostics are seeded by prisma/seed/diagnostic.seed.ts — one per
+// supported officer role, each 10 questions (4 role-specific Statistical + 6 shared covering the
+// other three domains). This looks the seeded one up by the caller's target role and only falls
+// back to the generic stub below when the officer's role has no authored diagnostic yet, so
+// existing accounts pointed at the other seeded target roles keep working unchanged.
+export async function getOrCreateDiagnostic(systemUserId: string, targetRoleTitle?: string | null) {
+  if (targetRoleTitle) {
+    const roleScoped = await prisma.assessment.findFirst({
+      where: { type: "diagnostic", title: `${DIAGNOSTIC_TITLE} – ${targetRoleTitle}` },
+    });
+    if (roleScoped) return redactAssessment(roleScoped);
+  }
+
   const existing = await prisma.assessment.findFirst({
     where: { title: DIAGNOSTIC_TITLE, type: "diagnostic" },
   });
@@ -98,4 +107,65 @@ export async function getOrCreateDiagnostic(systemUserId: string) {
     },
   });
   return redactAssessment(created);
+}
+
+export interface AssembleMcqAssessmentInput {
+  title: string;
+  targetRoleId?: string;
+  domainTags?: string[];
+  subSkillTags?: string[];
+  count: number;
+  timeLimitSeconds: number;
+  passingScore: number;
+  isProctored?: boolean;
+}
+
+// Trainer-facing "build a general MCQ test from the bank" endpoint. When targetRoleId is given,
+// the sub-skills required for that designation (RoleCompetencyRequirement) drive question
+// selection — this is the designation -> general-competency-test tie-in that nothing wired
+// before. Falls back to whatever explicit domainTags/subSkillTags the trainer passed, or the
+// whole approved bank if neither is given.
+export async function assembleMcqAssessment(createdById: string, input: AssembleMcqAssessmentInput) {
+  let subSkillTags = input.subSkillTags ?? [];
+
+  if (input.targetRoleId) {
+    const requirements = await prisma.roleCompetencyRequirement.findMany({
+      where: { targetRoleId: input.targetRoleId },
+      include: { subSkill: true },
+    });
+    if (requirements.length === 0) {
+      throw new ApiError(404, "No competency requirements found for this target role");
+    }
+    subSkillTags = Array.from(new Set([...subSkillTags, ...requirements.map((r) => r.subSkill.name)]));
+  }
+
+  const domainTags = input.domainTags ?? [];
+  if (subSkillTags.length === 0 && domainTags.length === 0) {
+    throw new ApiError(400, "Provide targetRoleId, subSkillTags, or domainTags to select questions from the bank");
+  }
+
+  const eligible = await prisma.question.findMany({
+    where: {
+      status: "approved",
+      ...(domainTags.length > 0 ? { domain: { in: domainTags } } : {}),
+      ...(subSkillTags.length > 0 ? { skill: { in: subSkillTags } } : {}),
+    },
+  });
+  if (eligible.length === 0) {
+    throw new ApiError(409, "No approved questions in the bank match the requested domains/sub-skills yet");
+  }
+
+  const sampled = balancedDomainSample(eligible, input.count);
+  const questions = toAssessmentQuestions(sampled);
+
+  return createAssessment(createdById, {
+    type: "mcq",
+    title: input.title,
+    domainTags: domainTags.length > 0 ? domainTags : Array.from(new Set(sampled.map((q) => q.domain))),
+    subSkillTags: subSkillTags.length > 0 ? subSkillTags : Array.from(new Set(sampled.map((q) => q.skill))),
+    questions,
+    timeLimitSeconds: input.timeLimitSeconds,
+    passingScore: input.passingScore,
+    isProctored: input.isProctored,
+  });
 }

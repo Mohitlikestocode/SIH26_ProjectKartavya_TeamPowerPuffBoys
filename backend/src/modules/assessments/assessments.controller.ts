@@ -3,6 +3,7 @@ import { z } from "zod";
 import * as service from "./assessments.service";
 import { ApiError } from "../../middleware/errorHandler";
 import { prisma } from "../../config/db";
+import { autoSessionSchema, maybeCreateSession } from "../../lib/assessment/autoSession";
 
 const createAssessmentSchema = z.object({
   type: z.enum(["mcq", "simulation", "diagnostic"]),
@@ -14,13 +15,43 @@ const createAssessmentSchema = z.object({
   timeLimitSeconds: z.number().int().positive(),
   passingScore: z.number().int().min(0).max(100),
   isProctored: z.boolean().default(false),
+  session: autoSessionSchema,
 });
 
 export async function createHandler(req: Request, res: Response, next: NextFunction) {
   try {
     if (!req.user) throw new ApiError(401, "Not authenticated");
-    const input = createAssessmentSchema.parse(req.body);
-    res.status(201).json(await service.createAssessment(req.user.id, input));
+    const { session: sessionInput, ...input } = createAssessmentSchema.parse(req.body);
+    const assessment = await service.createAssessment(req.user.id, input);
+    const session = await maybeCreateSession(assessment.id, req.user.id, sessionInput);
+    res.status(201).json(session ? { assessment, ...session } : { assessment });
+  } catch (err) {
+    next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
+  }
+}
+
+const createMcqAssessmentSchema = z.object({
+  title: z.string().min(1),
+  targetRoleId: z.string().optional(),
+  domainTags: z.array(z.string()).optional(),
+  subSkillTags: z.array(z.string()).optional(),
+  count: z.number().int().positive(),
+  timeLimitSeconds: z.number().int().positive(),
+  passingScore: z.number().int().min(0).max(100),
+  isProctored: z.boolean().default(false),
+  session: autoSessionSchema,
+});
+
+// Trainer-facing "build a general MCQ test from the bank, optionally scoped to a designation,
+// and hand back a working QR in one call" — the flow the trainer actually wants, instead of
+// hand-assembling `questions` JSON and creating a session as two separate manual steps.
+export async function createMcqHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    const { session: sessionInput, ...input } = createMcqAssessmentSchema.parse(req.body);
+    const assessment = await service.assembleMcqAssessment(req.user.id, input);
+    const session = await maybeCreateSession(assessment.id, req.user.id, sessionInput);
+    res.status(201).json(session ? { assessment, ...session } : { assessment });
   } catch (err) {
     next(err instanceof z.ZodError ? new ApiError(400, err.errors[0]?.message ?? "Invalid input") : err);
   }
@@ -45,10 +76,14 @@ export async function listHandler(req: Request, res: Response, next: NextFunctio
 
 export async function diagnosticHandler(req: Request, res: Response, next: NextFunction) {
   try {
+    if (!req.user) throw new ApiError(401, "Not authenticated");
     // System-owned content — attributed to any org_admin account.
     const systemUser = await prisma.user.findFirst({ where: { role: "org_admin" } });
     if (!systemUser) throw new ApiError(500, "No org_admin account available to own system content");
-    res.json(await service.getOrCreateDiagnostic(systemUser.id));
+
+    // The diagnostic is scoped to the caller's own target role where one has been authored.
+    const caller = await prisma.user.findUnique({ where: { id: req.user.id }, include: { targetRole: true } });
+    res.json(await service.getOrCreateDiagnostic(systemUser.id, caller?.targetRole?.title ?? null));
   } catch (err) {
     next(err);
   }

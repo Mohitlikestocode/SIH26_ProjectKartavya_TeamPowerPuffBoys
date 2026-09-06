@@ -268,6 +268,17 @@ export async function forceKick(attemptId: string) {
   return updated;
 }
 
+// Used by the frontend's completion gate ("has this learner finished their general MCQ and their
+// simulation yet") — needs the assessment's type alongside each attempt, since that's what the
+// gate is keyed on, not the assessment's identity.
+export async function listMyAttempts(userId: string) {
+  return prisma.attempt.findMany({
+    where: { userId },
+    include: { assessment: { select: { id: true, type: true, title: true } } },
+    orderBy: { startedAt: "desc" },
+  });
+}
+
 export async function listAttemptsForSession(sessionId: string) {
   return prisma.attempt.findMany({
     where: { sessionId },

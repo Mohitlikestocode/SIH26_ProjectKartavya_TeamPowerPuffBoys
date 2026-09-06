@@ -80,7 +80,8 @@ export default function Signin({ v }) {
               <span style={css("font-family:'IBM Plex Mono',monospace; font-size:15px; letter-spacing:0.2em; color:#123E7C; background:repeating-linear-gradient(135deg,#EDF1F7 0 6px,#F7F9FC 6px 12px); border:1px solid #C9D6E8; padding:7px 11px; border-radius:6px")}>7K4Q9</span>
             </div>
 
-            <button onClick={v.doSignIn} className="btn-login-primary" style={css("font:inherit; width:100%; font-size:15.5px; font-weight:700; cursor:pointer; padding:15px 16px; border:0; background:#1B5CB8; color:#fff; border-radius:8px; margin-top:18px")}>Login</button>
+            <button onClick={v.doSignIn} disabled={v.signInBusy} className="btn-login-primary" style={css(`font:inherit; width:100%; font-size:15.5px; font-weight:700; cursor:pointer; padding:15px 16px; border:0; background:#1B5CB8; color:#fff; border-radius:8px; margin-top:18px; opacity:${v.signInBusy ? 0.6 : 1}`)}>{v.signInLabel}</button>
+            {v.signInError && <div style={css("color:#991B1B; font-size:13px; margin-top:10px")}>{v.signInError}</div>}
             <div style={css("display:flex; align-items:center; gap:12px; margin:18px 0")}>
               <div style={css("flex:1; height:1px; background:#E3E9F2")}></div><span style={css("font-size:12px; color:#7A8AA3")}>or</span><div style={css("flex:1; height:1px; background:#E3E9F2")}></div>
             </div>
