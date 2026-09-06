@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import LiveDemo from './pages/LiveDemo.jsx'
 import JoinPage from './pages/JoinPage.jsx'
+import QuickQuiz from './pages/QuickQuiz.jsx'
 
 // No router dependency in this project — App.jsx is a single-page mock
 // driven entirely by in-memory state. The live-backend demo pages are
@@ -11,8 +12,13 @@ import JoinPage from './pages/JoinPage.jsx'
 // comment), so they're routed here by raw pathname instead. Vite's dev
 // server (and any static host with an SPA fallback) serves index.html for
 // both paths, so this runs on a real navigation or a real QR scan alike.
+// /quiz is the fully self-contained, zero-backend QR-scan demo target — see
+// QuickQuiz.jsx and components/QuickQuizQr.jsx.
 const path = window.location.pathname;
-const RootComponent = path.startsWith('/join/') ? JoinPage : path === '/live-demo' ? LiveDemo : App;
+const RootComponent = path.startsWith('/join/') ? JoinPage
+  : path === '/live-demo' ? LiveDemo
+  : path === '/quiz' ? QuickQuiz
+  : App;
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
