@@ -7,8 +7,13 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
+<<<<<<< HEAD
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+=======
+  url       = env("DATABASE_URL") // pooled (pgbouncer, transaction mode) — used at runtime
+  directUrl = env("DIRECT_URL") // unpooled — Prisma migrations need a real session, not pgbouncer
+>>>>>>> origin/main
 }
 
 // ---------------------------------------------------------------------------

@@ -142,6 +142,47 @@ export function listTargetRoles() {
   return apiFetch("/api/users/target-roles", { identityHeaders: "admin" });
 }
 
+// --- Kartavya assistant (text + speech, Sarvam) -----------------------------
+
+export function assistantChat(message, history = []) {
+  return apiFetch("/api/i18n/assistant/chat", {
+    method: "POST",
+    body: { message, history },
+    identityHeaders: "user",
+  });
+}
+
+export function assistantTranscribe(audioBlob) {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "voice-note.webm");
+  return apiFetch("/api/i18n/assistant/transcribe", {
+    method: "POST",
+    body: formData,
+    identityHeaders: "user",
+  });
+}
+
+// Bypasses apiFetch(): its content-type check would route a non-JSON response through
+// res.text(), which mangles binary audio (text() decodes as UTF-8, lossy for arbitrary bytes).
+// Speech responses need res.blob() instead, so this talks to fetch() directly.
+export async function assistantSpeak(text, languageCode) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/i18n/assistant/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-user-id": identity.userId },
+      body: JSON.stringify({ text, languageCode }),
+    });
+  } catch (err) {
+    throw new ApiError(0, `Could not reach the backend at ${API_BASE_URL}: ${err.message}`);
+  }
+  if (!res.ok) {
+    const payload = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, payload.error || `Request failed (${res.status})`);
+  }
+  return res.blob();
+}
+
 export const api = {
   base: API_BASE_URL,
   login: (email, password) => request("/api/auth/login", { method: "POST", body: { email, password } }),

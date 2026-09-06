@@ -54,6 +54,15 @@ export async function submitHandler(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function listMineHandler(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.user) throw new ApiError(401, "Not authenticated");
+    res.json(await service.listMyAttempts(req.user.id));
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function listForSessionHandler(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await service.listAttemptsForSession(req.params.sessionId));

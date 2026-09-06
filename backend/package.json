@@ -6,12 +6,13 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "build": "prisma generate && tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
+    "start": "prisma migrate deploy && node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "seed": "ts-node prisma/seed/index.ts",
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed/index.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -44,6 +45,7 @@
     "prisma": "^5.20.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
+    "tsc-alias": "^1.9.4",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.6.2"
   }

@@ -10,9 +10,41 @@ import type { Chunk, Prisma, Question, QuestionStatus } from "@prisma/client";
 
 const MAX_ATTEMPTS_PER_CHUNK = 3;
 
-async function generateForChunk(chunk: Chunk, forceAffirmative: boolean) {
+// Ported from mcq-generator/src/stages.ts — the two-stage diagnostic design (broad screening vs.
+// specific deep-dive), reusing this backend's own generation/validation pipeline and the real DB
+// ontology instead of mcq-generator's standalone CLI and its hand-copied ontology mirror.
+export type DiagnosticStage = "broad" | "specific";
+
+export const STAGE_PROFILES: Record<DiagnosticStage, { itemsPerSkill: number; intent: string }> = {
+  broad: {
+    itemsPerSkill: 2,
+    intent: `This is a SCREENING item in a broad diagnostic that covers many sub-skills with very few items each.
+
+Target the single most central idea in the source material for this sub-skill — the one an officer who understands the topic applies routinely, and an officer who does not gets wrong in an ordinary week of work. Avoid narrow edge cases, unusual exceptions and anything requiring a specific figure to be remembered.
+
+The item must cleanly separate "can apply this" from "cannot". A borderline learner getting it right by luck is a worse failure here than an item being slightly too easy.`,
+  },
+  specific: {
+    itemsPerSkill: 6,
+    intent: `This is a DIAGNOSTIC item for a learner already flagged weak in this sub-skill by a broad screening test. The goal is no longer to find out whether they are weak — it is to find out exactly HOW.
+
+Probe one specific, nameable failure mode. Each of the three distractors should correspond to a DIFFERENT misunderstanding — for example one confusing this concept with an adjacent one, one applying the right concept at the wrong stage of the workflow, one taking a partial action that looks complete. A learner's pattern of wrong answers across the set should point at which misconception they hold.
+
+Across a set of items for this sub-skill, vary the failure mode probed. Do not write six items that all catch the same mistake.`,
+  },
+};
+
+async function generateForChunk(
+  chunk: Chunk,
+  forceAffirmative: boolean,
+  opts?: { stageIntent?: string; domain?: string; skill?: string },
+) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_CHUNK; attempt++) {
-    const outcome = await generateMcqDraft({ sequence: chunk.sequence, heading: chunk.heading, text: chunk.text }, forceAffirmative);
+    const outcome = await generateMcqDraft(
+      { sequence: chunk.sequence, heading: chunk.heading, text: chunk.text },
+      forceAffirmative,
+      opts?.stageIntent,
+    );
 
     if (!outcome.ok) {
       await prisma.generationRejection.create({
@@ -39,7 +71,11 @@ async function generateForChunk(chunk: Chunk, forceAffirmative: boolean) {
         isNegatedStem: outcome.draft.isNegatedStem,
         correctOption: outcome.draft.correctOption,
         explanations: outcome.draft.explanations as unknown as Prisma.InputJsonValue,
-        // domain/skill stay at their "TBD" default — a later competency-ontology module fills these in.
+        // Left at "TBD" for the generic per-chunk flow — a later admin-review pass tags these.
+        // generateDiagnosticBatch (below) passes domain/skill explicitly, since it generates
+        // *for* a known sub-skill rather than from an untagged chunk.
+        domain: opts?.domain,
+        skill: opts?.skill,
       },
     });
   }
@@ -76,6 +112,85 @@ export async function generateQuestionsForDocument(documentId: string) {
       results.failedChunkIds.push(chunk.id);
     }
   }
+  return results;
+}
+
+export interface GenerateDiagnosticBatchInput {
+  documentId: string;
+  stage: DiagnosticStage;
+  targetRoleId?: string; // required for stage "broad": generates for every sub-skill the role requires
+  subSkillIds?: string[]; // required for stage "specific": the sub-skills flagged weak by stage 1
+}
+
+export interface DiagnosticBatchResult {
+  subSkillId: string;
+  subSkillName: string;
+  domainName: string;
+  generated: number;
+  requested: number;
+}
+
+// Generates a bank of questions targeted at specific sub-skills, ahead of a test being assembled
+// — never during a live attempt (generation is far too slow for that). Reuses the same
+// generate/validate/reject loop as generateQuestionsForDocument, just against a resolved sub-skill
+// list and a stage-specific brief, and tags domain/skill directly since the sub-skill is known
+// upfront (see generateForChunk's opts above).
+export async function generateDiagnosticBatch(input: GenerateDiagnosticBatchInput): Promise<DiagnosticBatchResult[]> {
+  const document = await prisma.sourceDocument.findUnique({
+    where: { id: input.documentId },
+    include: { chunks: { orderBy: { sequence: "asc" } } },
+  });
+  if (!document) throw new ApiError(404, "Document not found.");
+  if (document.status !== "processed") {
+    throw new ApiError(409, `Document is not ready for generation (status: ${document.status}).`);
+  }
+  if (document.chunks.length === 0) throw new ApiError(409, "Document has no chunks to generate from.");
+
+  let subSkills: { id: string; name: string; domain: { name: string } }[];
+  if (input.stage === "broad") {
+    if (!input.targetRoleId) throw new ApiError(400, "targetRoleId is required for stage 'broad'");
+    const requirements = await prisma.roleCompetencyRequirement.findMany({
+      where: { targetRoleId: input.targetRoleId },
+      include: { subSkill: { include: { domain: true } } },
+    });
+    if (requirements.length === 0) throw new ApiError(404, "No competency requirements found for this target role");
+    subSkills = requirements.map((r) => r.subSkill);
+  } else {
+    if (!input.subSkillIds || input.subSkillIds.length === 0) {
+      throw new ApiError(400, "subSkillIds is required for stage 'specific'");
+    }
+    subSkills = await prisma.subSkill.findMany({
+      where: { id: { in: input.subSkillIds } },
+      include: { domain: true },
+    });
+    if (subSkills.length === 0) throw new ApiError(404, "None of the given subSkillIds exist");
+  }
+
+  const profile = STAGE_PROFILES[input.stage];
+  const results: DiagnosticBatchResult[] = [];
+
+  for (const subSkill of subSkills) {
+    let generated = 0;
+    let chunkCursor = 0;
+    while (generated < profile.itemsPerSkill && chunkCursor < document.chunks.length * MAX_ATTEMPTS_PER_CHUNK) {
+      const chunk = document.chunks[chunkCursor % document.chunks.length];
+      chunkCursor++;
+      const question = await generateForChunk(chunk, false, {
+        stageIntent: profile.intent,
+        domain: subSkill.domain.name,
+        skill: subSkill.name,
+      });
+      if (question) generated++;
+    }
+    results.push({
+      subSkillId: subSkill.id,
+      subSkillName: subSkill.name,
+      domainName: subSkill.domain.name,
+      generated,
+      requested: profile.itemsPerSkill,
+    });
+  }
+
   return results;
 }
 
