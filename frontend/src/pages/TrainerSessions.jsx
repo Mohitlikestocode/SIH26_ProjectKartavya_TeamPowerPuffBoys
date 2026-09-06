@@ -1,4 +1,5 @@
 import { css } from "../lib/css";
+import QuickQuizQr from "../components/QuickQuizQr";
 
 export default function TrainerSessions({ v }) {
   return (
@@ -9,6 +10,12 @@ export default function TrainerSessions({ v }) {
           <div style={css("font-size:13.5px; color:#5A6C86; margin-top:4px")}>Every session names the question set it runs and the course it is mapped to, so you always know which QR opens which test.</div>
         </div>
         <button style={css("font:inherit; font-size:14px; font-weight:700; cursor:pointer; padding:12px 20px; border:0; background:#F58220; color:#fff; border-radius:24px; white-space:nowrap")}>+ Create session</button>
+      </div>
+
+      {/* Real, scannable, zero-backend QR — everything below this line is the design mock (fake
+          session list, decorative QR pattern). This is the one you actually scan with a phone. */}
+      <div style={css("max-width:380px; margin-bottom:24px")}>
+        <QuickQuizQr />
       </div>
 
       <div style={css("display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr)); gap:20px; align-items:start")}>
