@@ -98,3 +98,163 @@ h1, h2, h3, h4 {
 .session-card:hover {
   border-color: #1B5CB8 !important;
 }
+
+/* Landing page announcements ticker: the track renders ANNOUNCEMENTS twice
+   back-to-back, so translating exactly -50% loops seamlessly onto the
+   duplicate copy instead of jumping. */
+@keyframes announcement-ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.announcement-ticker {
+  animation: announcement-ticker-scroll 24s linear infinite;
+  will-change: transform;
+}
+.announcement-ticker:hover {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .announcement-ticker {
+    animation: none;
+  }
+}
+
+/* Landing page dynamic-card hover treatment: a subtle lift + deepened shadow
+   on the "How it works" step cards. Feature cards get the same lift but
+   additionally pick up their own accent color on the border, set per-card
+   via the --accent custom property (see Landing.jsx's FeatureCard). */
+.dynamic-card, .feature-card {
+  transition: transform 320ms ease-out, box-shadow 320ms ease-out, border-color 320ms ease-out;
+}
+.dynamic-card:hover, .feature-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 32px rgba(18, 62, 124, 0.16);
+}
+.feature-card:hover {
+  border-color: var(--accent) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dynamic-card, .feature-card {
+    transition: box-shadow 320ms ease-out, border-color 320ms ease-out;
+  }
+  .dynamic-card:hover, .feature-card:hover {
+    transform: none;
+  }
+}
+
+/* "How it works" step cards: kept as its own rule set rather than folded
+   into .dynamic-card, because the scroll-reveal's translateY and the
+   hover-lift's translateY are both on `transform` — giving them one combined
+   selector chain (.step-reveal.is-visible:hover) avoids a specificity fight
+   between two same-weight rules over which translateY wins. */
+.step-reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 600ms ease-out, transform 500ms ease-out, box-shadow 320ms ease-out;
+}
+.step-reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.step-reveal.is-visible:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 32px rgba(18, 62, 124, 0.16);
+}
+
+/* Numbered circle: gradient + shadow give the sphere-like depth are set
+   inline per-step (they're derived from that step's own accent color); this
+   just adds the hover micro-interaction, which is color-independent. */
+.step-number {
+  transition: transform 350ms ease-out;
+}
+.step-number:hover {
+  transform: scale(1.05);
+}
+
+/* The connecting line's circle-center math only holds when the steps grid
+   actually renders all 4 cards in one row — hidden below that width rather
+   than risk it drifting out of alignment with the circles once the grid
+   wraps to fewer columns. */
+@media (max-width: 1250px) {
+  .step-track {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step-reveal {
+    transition: box-shadow 320ms ease-out;
+    opacity: 1;
+    transform: none;
+  }
+  .step-reveal.is-visible:hover {
+    transform: none;
+  }
+  .step-number {
+    transition: none;
+  }
+  .step-number:hover {
+    transform: none;
+  }
+}
+
+/* Hero "Sample gap map" radar-sweep animation. Duration/delay come from
+   inline style (Landing.jsx's HERO_SWEEP_DURATION_S / HERO_AXIS_DELAYS_S) so
+   the JS constants stay the single source of truth for timing; these rules
+   only define the keyframe shapes, easing, and iteration count.
+   transform-box: view-box lets rotation/scale pivot around an exact SVG
+   coordinate (220,210 — the chart's own center) instead of each element's
+   individual bounding box. */
+@keyframes radar-sweep-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.radar-sweep {
+  transform-box: view-box;
+  transform-origin: 220px 210px;
+  animation-name: radar-sweep-rotate;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes radar-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+/* Dashed outline "marching" — the pattern (5 4, repeat length 9) shifts by
+   two full repeats (-18) so it always lands back on an identical-looking
+   frame, giving a seamless loop with no visible jump. */
+@keyframes radar-dash-march {
+  to { stroke-dashoffset: -18; }
+}
+.radar-current {
+  transform-box: view-box;
+  transform-origin: 220px 210px;
+  animation: radar-breathe 3.6s ease-in-out infinite;
+}
+.radar-required {
+  transform-box: view-box;
+  transform-origin: 220px 210px;
+  /* Breathing delayed 1.1s relative to .radar-current so the two shapes
+     drift out of sync; the dash-march runs independently on its own clock. */
+  animation: radar-breathe 3.6s ease-in-out 1.1s infinite, radar-dash-march 3.5s linear infinite;
+}
+
+@keyframes radar-axis-pulse {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(27, 92, 184, 0.85)); }
+  8%, 92% { filter: none; }
+}
+.radar-axis-label {
+  animation-name: radar-axis-pulse;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep {
+    display: none;
+  }
+  .radar-current, .radar-required, .radar-axis-label {
+    animation: none;
+  }
+}
