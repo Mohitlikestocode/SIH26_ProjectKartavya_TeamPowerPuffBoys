@@ -12,11 +12,7 @@ import { recommendationsRouter } from "./modules/recommendations/recommendations
 import { igotRouter } from "./modules/igot/igot.routes";
 import { nsstaRouter } from "./modules/nssta/nssta.routes";
 import { assessmentsRouter } from "./modules/assessments/assessments.routes";
-// TEMP (verification only, revert before commit): documentsRouter's import chain pulls in
-// pdf-parse -> pdfjs-dist, which crashes at module-load time on Node 20.15.0 (references the
-// browser-only DOMMatrix global). Unrelated to anything we're building — disabled here only so
-// the rest of the server can boot for a real end-to-end check.
-// import { documentsRouter } from "./modules/documents/documents.routes";
+import { documentsRouter } from "./modules/documents/documents.routes";
 import { questionsRouter } from "./modules/questions/questions.routes";
 import { attemptsRouter } from "./modules/attempts/attempts.routes";
 import { sessionsRouter } from "./modules/sessions/sessions.routes";
@@ -41,7 +37,7 @@ app.use("/api/recommendations", recommendationsRouter);
 app.use("/api/courses/igot", igotRouter);
 app.use("/api/courses/nssta", nsstaRouter);
 app.use("/api/assessments", assessmentsRouter);
-// app.use("/api/documents", documentsRouter); // TEMP: see disabled import above
+app.use("/api/documents", documentsRouter);
 app.use("/api/questions", questionsRouter);
 app.use("/api/attempts", attemptsRouter);
 app.use("/api/sessions", sessionsRouter);

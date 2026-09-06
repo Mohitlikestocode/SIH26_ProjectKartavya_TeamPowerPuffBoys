@@ -260,6 +260,10 @@ export default function App() {
     const r = st.loginTab;
     api.login(DEMO_LOGIN_EMAIL[r], "password123")
       .then(({ token, user }) => {
+        // Persist the token so the session-restore useEffect above actually has something to
+        // rehydrate from on refresh — without this that effect is dead code (it only ever
+        // getItem/removeItem's a key nothing writes).
+        try { localStorage.setItem("kartavya_token", token); } catch { /* private mode */ }
         setState({
           role: r, acct: false, prefs: false,
           screen: r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics",
@@ -428,7 +432,10 @@ export default function App() {
     goSignin: go("signin"), goCatalogue: go("lcat"), goSystem: go("system"),
     goDash: go("ldash"), goHub: go("lhub"), goAssess: go("lassess"), goReview: go("lresult"),
     goStudio: go("tstudio"), goUpload: go("tupload"),
-    signOut: () => setState({ role: null, screen: "landing", acct: false, prefs: false, assistant: false }),
+    signOut: () => {
+      try { localStorage.removeItem("kartavya_token"); } catch { /* private mode */ }
+      setState({ role: null, screen: "landing", acct: false, prefs: false, assistant: false, authToken: null, authUser: null, employeeDashboard: null });
+    },
     openScanner: () => setState({ scanner: true }),
     closeScanner: () => setState({ scanner: false }),
     scannerOpen: st.scanner,

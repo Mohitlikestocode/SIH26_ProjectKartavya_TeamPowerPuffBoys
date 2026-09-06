@@ -120,6 +120,10 @@ export async function getPeerStanding(userId: string): Promise<PeerStanding | nu
 
   standings.sort((a, b) => a.avgGap - b.avgGap);
   const myIndex = standings.findIndex((s) => s.userId === userId);
+  // The caller may not be part of the peer set (e.g. a trainer/org_admin account that still has a
+  // cadre + targetRoleId set hitting the employee dashboard) — the peers query is scoped to
+  // role: "learner". Without this, `standings[-1]` is undefined and `.avgGap` below throws a 500.
+  if (myIndex === -1) return null;
   const mine = standings[myIndex];
   const peersWithStrictlyLargerGap = standings.filter((s) => s.avgGap > mine.avgGap).length;
 

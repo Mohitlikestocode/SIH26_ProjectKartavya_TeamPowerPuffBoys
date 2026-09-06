@@ -73,6 +73,24 @@ async function main() {
   if (orgAdmin) {
     await getOrCreateDiagnostic(orgAdmin.id);
     await seedDiagnosticContent(prisma, orgAdmin.id);
+
+    // seedDiagnosticContent creates its own three grade-scoped roles (JTS / STS / JSO) that are
+    // distinct from the eight aspirational target roles in roles.seed.ts. The demo learner is
+    // seeded above against "Deputy Director – Price Statistics", which has no authored
+    // role-scoped diagnostic, so GET /api/assessments/diagnostic would always fall back to the
+    // generic stub. Re-point the demo learner at the matching grade-scoped role so the
+    // role-scoping path is exercised by the default login.
+    const jtsPriceStats = await prisma.targetRole.findUnique({
+      where: { title: "JTS/Assistant Director – Price Statistics" },
+    });
+    if (jtsPriceStats) {
+      await prisma.user.update({
+        where: { email: "learner@kartavya.gov.in" },
+        data: { targetRoleId: jtsPriceStats.id },
+      });
+      console.log('  Re-pointed demo learner at "JTS/Assistant Director – Price Statistics"');
+    }
+
     await seedSyntheticWorkforce(prisma);
   } else {
     console.warn("  ! no org_admin user found — skipping diagnostic + synthetic workforce seed");
