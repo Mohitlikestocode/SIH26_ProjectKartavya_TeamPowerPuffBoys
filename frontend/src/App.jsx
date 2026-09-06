@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-import { useState, useEffect } from "react";
-=======
-import { useRef, useState } from "react";
->>>>>>> origin/main
+import { useState, useEffect, useRef } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
 import { uploadDocument, generateForDocument, api, assistantChat, assistantTranscribe, assistantSpeak } from "./lib/api";

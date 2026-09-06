@@ -80,20 +80,10 @@ export async function diagnosticHandler(req: Request, res: Response, next: NextF
     // System-owned content — attributed to any org_admin account.
     const systemUser = await prisma.user.findFirst({ where: { role: "org_admin" } });
     if (!systemUser) throw new ApiError(500, "No org_admin account available to own system content");
-<<<<<<< HEAD
 
     // The diagnostic is scoped to the caller's own target role where one has been authored.
-    const caller = req.user
-      ? await prisma.user.findUnique({ where: { id: req.user.id }, include: { targetRole: true } })
-      : null;
-
+    const caller = await prisma.user.findUnique({ where: { id: req.user.id }, include: { targetRole: true } });
     res.json(await service.getOrCreateDiagnostic(systemUser.id, caller?.targetRole?.title ?? null));
-=======
-    // The requesting learner's own target role decides whether they get the curated,
-    // designation-specific diagnostic or the generic fallback — see getOrCreateDiagnostic.
-    const requestingUser = await prisma.user.findUnique({ where: { id: req.user.id } });
-    res.json(await service.getOrCreateDiagnostic(systemUser.id, requestingUser?.targetRoleId));
->>>>>>> origin/main
   } catch (err) {
     next(err);
   }
