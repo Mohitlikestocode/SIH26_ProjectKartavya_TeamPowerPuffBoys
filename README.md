@@ -1,12 +1,3 @@
----
-title: Kartavya
-emoji: 🧭
-colorFrom: blue
-colorTo: orange
-sdk: docker
-app_port: 7860
-pinned: false
----
 
 <div align="center">
 
