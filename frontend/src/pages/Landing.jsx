@@ -79,7 +79,7 @@ const STEPS = [
   ["1", "#F58220", "Profile", "Cadre, designation, posting and prior training pulled from MoSPI HR and iGOT — no forms."],
   ["2", "#1B5CB8", "Assess", "MCQs, two branching job simulations and a written judgement question, AI-evaluated."],
   ["3", "#1B5CB8", "Gap score", "Scored against the competency requirement of your target role, sub-skill by sub-skill."],
-  ["4", "#F58220", "Personalised path", "Three sequenced stages from both sources, each stating the gap it closes."],
+  ["4", "#F58220", "Development Map", "Priority stations from both sources, ranked by gap size, each stating why it was chosen."],
 ];
 
 function FeatureCard({ card }) {

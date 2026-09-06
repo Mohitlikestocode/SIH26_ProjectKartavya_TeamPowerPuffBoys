@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { css } from "./lib/css";
 import { qr } from "./components/QrCode";
 import { uploadDocument, generateForDocument, api, ApiError } from "./lib/api";
 import {
-  D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS, SKILLPATH, STAGE_META,
+  D, DOM, SRC, LOGIN, TARGETS, SUBS, SUBOFF, ITEMS,
   CATALOGUE, INPROGRESS, CERTS, HEAT, RAMP, EFFECT, EMERGING,
   REPORTS, SESSIONS, FLOW, ASSIST,
 } from "./data";
@@ -23,8 +23,8 @@ import Catalogue from "./pages/Catalogue";
 import AssessmentRunner from "./pages/AssessmentRunner";
 import Scoring from "./pages/Scoring";
 import Result from "./pages/Result";
-import LearningPath from "./pages/LearningPath";
 import AssessmentsHub from "./pages/AssessmentsHub";
+import DevelopmentMap from "./pages/DevelopmentMap";
 import TrainerUpload from "./pages/TrainerUpload";
 import TrainerStudio from "./pages/TrainerStudio";
 import TrainerSessions from "./pages/TrainerSessions";
@@ -91,8 +91,27 @@ export default function App() {
   const lv = levels(st);
   const go = (s) => () => setState({ screen: s });
 
+  // Restore a session across page refresh: the token itself is the only thing that survives
+  // (React state resets to initialState on reload), so re-derive role/authUser from it via
+  // GET /api/auth/me rather than trusting anything cached client-side.
+  useEffect(() => {
+    const token = localStorage.getItem("kartavya_token");
+    if (!token) return;
+    api.me(token)
+      .then((user) => {
+        const role = user.role === "org_admin" ? "admin" : user.role;
+        setState({
+          authToken: token, authUser: user, authError: null, role,
+          screen: role === "learner" ? "ldash" : role === "trainer" ? "tstudio" : "oanalytics",
+        });
+        loadEmployeeDashboard(token);
+      })
+      .catch(() => localStorage.removeItem("kartavya_token"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const nav = st.role === "learner"
-    ? [["ldash", "Dashboard"], ["lcat", "Courses"], ["lpath", "Learning path"], ["lassess", "Assessments"]]
+    ? [["ldash", "Dashboard"], ["lcat", "Courses"], ["lhub", "Development Map"], ["lassess", "Assessments"]]
     : st.role === "trainer"
       ? [["tupload", "Upload & generate"], ["tstudio", "Review items"], ["tsessions", "Sessions & QR"]]
       : st.role === "admin"
@@ -138,29 +157,6 @@ export default function App() {
     gap: g.gap.toFixed(1), readout: g.level.toFixed(1) + " / " + g.req.toFixed(1),
     barPct: Math.max(4, Math.min(100, g.gap / 3 * 100)).toFixed(0) + "%",
     color: DOM[g.domain].color, tint: DOM[g.domain].tint, border: DOM[g.domain].border,
-  }));
-
-  const pathGaps = [];
-  topGaps.forEach((g) => { if (pathGaps.length < 2 && !pathGaps.some((p) => p.domain === g.domain)) pathGaps.push(g); });
-  const stages = STAGE_META.map((m, si) => ({
-    n: String(si + 1), title: m.title, gate: m.gate,
-    accent: si === 0 ? "#1B5CB8" : si === 1 ? "#E9761B" : "#F58220",
-    items: pathGaps.map((g) => {
-      const it = (SKILLPATH[g.name] || SKILLPATH["Sampling methodology"])[si];
-      return Object.assign({}, SRC[it.src], {
-        title: it.title, duration: it.duration, format: it.format, match: it.match,
-        why: si === 0
-          ? "Entry point for your " + g.name + " gap (assessed " + g.level.toFixed(1) + " against " + g.req.toFixed(1) + " required)."
-          : si === 1
-            ? "Applies " + g.name + " to live survey work; assumes Stage 1 is complete."
-            : "Consolidates " + g.name + " to the level " + t.name + " requires.",
-      });
-    }),
-  }));
-  const stageHeads = STAGE_META.map((m, si) => ({
-    n: String(si + 1), phase: m.phase, title: m.title, note: m.note,
-    meta: stages[si].items.length + " items · " + (si === 0 ? "start now" : si === 1 ? "next quarter" : "within 12 months"),
-    dotBg: si === 0 ? "#123E7C" : "#fff", dotFg: si === 0 ? "#fff" : "#123E7C", dotBorder: si === 0 ? "#123E7C" : "#C9CFD8",
   }));
 
   const recSkills = topGaps.slice(0, 3).map((g) => g.name);
@@ -377,6 +373,38 @@ export default function App() {
       color: domMeta.color, tint: domMeta.tint, border: domMeta.border,
     };
   });
+  // Development Map trail layout: one station per real ranked gap (backend/src/modules/
+  // recommendations/recommendations.service.ts's buildDevelopmentTrail), laid out on a serpentine
+  // isometric grid so it never needs horizontal scroll. Geometry is precomputed here — the page
+  // component only renders literal SVG from these fields, same convention as this file's own
+  // radar-chart geometry (curPoints/reqPoints) above.
+  const TRAIL_MAX_ROW = 3, TRAIL_TILE_W = 140, TRAIL_TILE_H = 64, TRAIL_ORIGIN_X = 300, TRAIL_ORIGIN_Y = 70;
+  const trailPositions = (st.employeeDashboard?.developmentTrail ?? []).map((station, i) => {
+    const row = Math.floor(i / TRAIL_MAX_ROW);
+    const idxInRow = i % TRAIL_MAX_ROW;
+    const col = row % 2 === 0 ? idxInRow : (TRAIL_MAX_ROW - 1 - idxInRow);
+    const domainKey = Object.keys(REAL_DOMAIN_NAME).find((k) => REAL_DOMAIN_NAME[k] === station.domain) ?? station.domain;
+    const domainMeta = DOM[domainKey] ?? { color: "#5A6472", tint: "#F1F3F6", border: "#DDE1E7", label: station.domain };
+    const primary = station.primary;
+    const srcKey = primary?.source?.startsWith("iGOT") ? "iGOT" : "NSSTA";
+    const srcMeta = SRC[srcKey];
+    return {
+      order: station.order,
+      subSkill: station.subSkill,
+      gap: station.gap,
+      x: TRAIL_ORIGIN_X + (col - row) * (TRAIL_TILE_W / 2),
+      y: TRAIL_ORIGIN_Y + (col + row) * (TRAIL_TILE_H / 2),
+      isFirst: i === 0,
+      domainLabel: domainMeta.label ?? station.domain,
+      domainColor: domainMeta.color, domainTint: domainMeta.tint, domainBorder: domainMeta.border,
+      title: primary?.title ?? "No matching course yet",
+      why: primary?.why ?? "No course in the catalogue currently tags this sub-skill.",
+      hasPrimary: !!primary,
+      srcLabel: primary?.source ?? "",
+      srcColor: srcMeta?.srcColor, srcTint: srcMeta?.srcTint, srcBorder: srcMeta?.srcBorder, srcFg: srcMeta?.srcFg,
+    };
+  });
+
   // "Assessed" now means "has a real submitted/kicked attempt on record" — gapMap itself is
   // always non-empty once a target role is set (current defaults to 0 per sub-skill), so it can't
   // be used as the "have they actually taken anything" signal.
@@ -398,7 +426,7 @@ export default function App() {
     userDesig: L.desig, userFirst: "Anandi",
     goHome: () => setState({ screen: st.role === "learner" ? "ldash" : st.role === "trainer" ? "tstudio" : st.role === "admin" ? "oanalytics" : "landing" }),
     goSignin: go("signin"), goCatalogue: go("lcat"), goSystem: go("system"),
-    goDash: go("ldash"), goPath: go("lpath"), goAssess: go("lassess"), goReview: go("lresult"),
+    goDash: go("ldash"), goHub: go("lhub"), goAssess: go("lassess"), goReview: go("lresult"),
     goStudio: go("tstudio"), goUpload: go("tupload"),
     signOut: () => setState({ role: null, screen: "landing", acct: false, prefs: false, assistant: false }),
     openScanner: () => setState({ scanner: true }),
@@ -412,7 +440,7 @@ export default function App() {
     closeAssistant: () => setState({ assistant: false }),
     assistLines: ASSIST,
     isLanding: st.screen === "landing", isSignin: st.screen === "signin",
-    isDash: st.screen === "ldash", isCat: st.screen === "lcat", isPath: st.screen === "lpath",
+    isDash: st.screen === "ldash", isCat: st.screen === "lcat", isHub: st.screen === "lhub",
     isAssess: st.screen === "lassess", isRunner: st.screen === "runner", isScoring: st.screen === "scoring",
     isResult: st.screen === "lresult", isUpload: st.screen === "tupload", isStudio: st.screen === "tstudio",
     isSessions: st.screen === "tsessions", isAnalytics: st.screen === "oanalytics",
@@ -428,14 +456,14 @@ export default function App() {
     onTargetSelect: (e) => setState({ target: parseInt(e.target.value, 10) }),
     targetIdx: String(st.target), targetName: t.name, targetTrack: t.track, targetNote: t.note,
     targetReqs: D.map((d, i) => ({ label: DOM[d].label, color: DOM[d].color, value: t.req[i].toFixed(1), pct: (t.req[i] / 5 * 100).toFixed(0) + "%" })),
-    curPoints: realCurPoints, reqPoints: realReqPoints, domainCards: realDomainCards, gaps: realGaps, stages, stageHeads,
+    curPoints: realCurPoints, reqPoints: realReqPoints, domainCards: realDomainCards, gaps: realGaps,
+    developmentTrail: trailPositions, peerStanding: st.employeeDashboard?.peerStanding ?? null,
     gapIndex: realGapIndexNum.toFixed(2),
     gapBand: realGapIndexNum >= 1.3 ? "Significant" : realGapIndexNum >= 0.6 ? "Moderate" : "Minor",
     gapBandColor: realGapIndexNum >= 1.3 ? "#9A3412" : realGapIndexNum >= 0.6 ? "#B45309" : "#166534",
     realTargetRoleTitle,
     employeeDashboardError: st.employeeDashboardError,
     meanLevel: meanLevelNum.toFixed(1), assessedOn: realAssessedOn,
-    firstStepTitle: stages[0].items[0].title,
     // Real diagnostic flow (replaces the old fake ITEMS-based startAssessment/retakeAssessment/
     // submitAssessment). Dashboard now reads live data from GET /api/dashboards/employee, refreshed
     // after login and after every submission, so st.answers/st.essay no longer affect learner views.
@@ -583,7 +611,7 @@ export default function App() {
           {v.isRunner && <AssessmentRunner v={v} />}
           {v.isScoring && <Scoring v={v} />}
           {v.isResult && <Result v={v} />}
-          {v.isPath && <LearningPath v={v} />}
+          {v.isHub && <DevelopmentMap v={v} />}
           {v.isAssess && <AssessmentsHub v={v} />}
           {v.isUpload && <TrainerUpload v={v} />}
           {v.isStudio && <TrainerStudio v={v} />}

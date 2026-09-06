@@ -61,12 +61,19 @@ export async function listAssessments(createdById?: string) {
 
 const DIAGNOSTIC_TITLE = "Baseline Diagnostic";
 
-// Pulls a balanced set of sub-skills across all 4 domains for a first-time
-// user's onboarding test. Calls into the teammate's question bank by domain
-// tag once it exists — for now this assembles against a clearly-labelled
-// stub question set so the endpoint and downstream Attempt flow can be
-// wired and tested today (see prompt.md Phase 3 item 15).
-export async function getOrCreateDiagnostic(systemUserId: string) {
+// Role-scoped onboarding diagnostics are seeded by prisma/seed/diagnostic.seed.ts — one per
+// supported officer role, each 10 questions (4 role-specific Statistical + 6 shared covering the
+// other three domains). This looks the seeded one up by the caller's target role and only falls
+// back to the generic stub below when the officer's role has no authored diagnostic yet, so
+// existing accounts pointed at the other seeded target roles keep working unchanged.
+export async function getOrCreateDiagnostic(systemUserId: string, targetRoleTitle?: string | null) {
+  if (targetRoleTitle) {
+    const roleScoped = await prisma.assessment.findFirst({
+      where: { type: "diagnostic", title: `${DIAGNOSTIC_TITLE} – ${targetRoleTitle}` },
+    });
+    if (roleScoped) return redactAssessment(roleScoped);
+  }
+
   const existing = await prisma.assessment.findFirst({
     where: { title: DIAGNOSTIC_TITLE, type: "diagnostic" },
   });

@@ -110,13 +110,49 @@ export async function getRecommendations(userId: string): Promise<GapRecommendat
 
   const gaps = await getRankedGaps(userId);
 
+  // Each gap's candidate lookup is independent (its own 2 queries, no shared state across
+  // iterations), so running them sequentially was pure wasted latency — measured at ~9.5s for a
+  // 7-gap user against a real (non-local) Postgres instance, almost entirely network round trips
+  // rather than query cost. Promise.all preserves the input order, so results stay gap-descending
+  // exactly as before.
+  const candidatesByGap = await Promise.all(gaps.map((gap) => candidatesForGap(gap, targetRoleTitle)));
+
   const results: GapRecommendations[] = [];
-  for (const gap of gaps) {
-    const candidates = await candidatesForGap(gap, targetRoleTitle);
+  gaps.forEach((gap, i) => {
+    const candidates = candidatesByGap[i];
     if (candidates.length) {
       results.push({ subSkill: gap.subSkill, domain: gap.domain, gap: gap.gap, candidates });
     }
-  }
+  });
 
   return results;
+}
+
+export interface DevelopmentStation {
+  order: number;
+  subSkill: string;
+  domain: string;
+  gap: number;
+  primary: RecommendationCandidate;
+  alternates: RecommendationCandidate[];
+}
+
+// Turns getRecommendations()'s gap-grouped output into a single ordered trail for the
+// Development Map — a pure reshape, no new DB query. Recommendations are already gap-descending
+// and already capped at 3 candidates per gap, so this just slices to maxStations and promotes each
+// gap's top-scored candidate to `primary`. Deliberately carries no "completed" status: there's no
+// real enrollment/completion signal in the schema, and inventing one risks a false positive (a
+// later score bump could come from a different course than the one shown here).
+export function buildDevelopmentTrail(
+  recommendations: GapRecommendations[],
+  maxStations = 6,
+): DevelopmentStation[] {
+  return recommendations.slice(0, maxStations).map((g, i) => ({
+    order: i + 1,
+    subSkill: g.subSkill,
+    domain: g.domain,
+    gap: g.gap,
+    primary: g.candidates[0],
+    alternates: g.candidates.slice(1),
+  }));
 }
