@@ -42,8 +42,44 @@ export const BatchSchema = z.object({
 export type Question = z.infer<typeof QuestionSchema>;
 export type Batch = z.infer<typeof BatchSchema>;
 
+export const CriterionSchema = z.object({
+  key: z.string(),
+  /** A claim the answer must make. Not a term it must contain — see FREE_TEXT_INTENT. */
+  claim: z.string(),
+  met_example: z.string(),
+  not_met_example: z.string(),
+  source_grounding: z.string(),
+});
+
+export const FreeTextItemSchema = z.object({
+  id: z.string(),
+  domain: z.string(),
+  difficulty: z.enum(DIFFICULTIES),
+  scenario: z.string(),
+  question: z.string(),
+  /** Shown to the learner after they answer. Written to teach, not to justify a mark. */
+  reference_answer: z.string(),
+  criteria: z.array(CriterionSchema),
+});
+
+export const FreeTextBatchSchema = z.object({
+  items: z.array(FreeTextItemSchema),
+  notes: z.string(),
+});
+
+export type Criterion = z.infer<typeof CriterionSchema>;
+export type FreeTextItem = z.infer<typeof FreeTextItemSchema>;
+export type FreeTextBatch = z.infer<typeof FreeTextBatchSchema>;
+
 /** What lands in the output file: the model's item plus the resolved backend labels. */
 export interface TaggedQuestion extends Question {
+  kind: "mcq";
+  competency: Competency;
+  stage: Stage;
+}
+
+export interface TaggedFreeTextItem extends FreeTextItem {
+  kind: "free_text";
   competency: Competency;
   stage: Stage;
 }
@@ -61,8 +97,12 @@ export interface SkillBankFile {
     difficulty: Difficulty;
     requested_count: number;
     returned_count: number;
+    free_text_requested: number;
+    free_text_returned: number;
   };
   questions: TaggedQuestion[];
+  /** Written-answer items. Empty for the broad stage. */
+  free_text: TaggedFreeTextItem[];
   notes: string;
   warnings: string[];
 }
@@ -76,7 +116,9 @@ export interface BankIndex {
   source_file: string;
   difficulty: Difficulty;
   items_per_skill: number;
+  free_text_per_skill: number;
   total_items: number;
+  total_free_text_items: number;
   skills: {
     requested_tag: string;
     domain_tag: string;
@@ -85,6 +127,7 @@ export interface BankIndex {
     file: string;
     requested: number;
     returned: number;
+    free_text_returned: number;
     warnings: string[];
   }[];
 }
