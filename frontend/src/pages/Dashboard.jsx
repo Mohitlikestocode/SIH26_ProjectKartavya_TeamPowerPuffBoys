@@ -199,7 +199,7 @@ export default function Dashboard({ v }) {
                 ))}
               </div>
               <div style={css("display:flex; gap:9px; margin-top:16px; flex-wrap:wrap")}>
-                <button onClick={v.goPath} style={css("font:inherit; flex:1; min-width:170px; font-size:14px; font-weight:700; cursor:pointer; padding:12px 16px; border:0; background:#123E7C; color:#fff; border-radius:8px")}>Open my learning path</button>
+                <button onClick={v.goHub} style={css("font:inherit; flex:1; min-width:170px; font-size:14px; font-weight:700; cursor:pointer; padding:12px 16px; border:0; background:#123E7C; color:#fff; border-radius:8px")}>Open my Development Map</button>
                 <button onClick={v.goReview} style={css("font:inherit; font-size:14px; font-weight:600; cursor:pointer; padding:12px 16px; border:1px solid #C9CFD8; background:#fff; color:#123E7C; border-radius:8px")}>Review my answers</button>
               </div>
             </div>

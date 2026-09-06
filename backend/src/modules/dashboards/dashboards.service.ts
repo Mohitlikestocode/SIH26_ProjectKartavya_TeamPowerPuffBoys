@@ -1,6 +1,6 @@
 import { prisma } from "../../config/db";
 import { getGapMap, getRankedGaps } from "../competency/competency.service";
-import { getRecommendations } from "../recommendations/recommendations.service";
+import { getRecommendations, buildDevelopmentTrail } from "../recommendations/recommendations.service";
 
 // ---------------------------------------------------------------------------
 // Employee dashboard (prompt.md Phase 5, item 19)
@@ -9,10 +9,11 @@ import { getRecommendations } from "../recommendations/recommendations.service";
 export async function getEmployeeDashboard(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { targetRole: true } });
 
-  const [gapMap, rankedGaps, recommendations, activeAttempts, history] = await Promise.all([
+  const [gapMap, rankedGaps, recommendations, peerStanding, activeAttempts, history] = await Promise.all([
     user?.targetRoleId ? getGapMap(userId) : Promise.resolve([]),
     user?.targetRoleId ? getRankedGaps(userId) : Promise.resolve([]),
     user?.targetRoleId ? getRecommendations(userId) : Promise.resolve([]),
+    user?.targetRoleId ? getPeerStanding(userId) : Promise.resolve(null),
     prisma.attempt.findMany({
       where: { userId, status: "in_progress" },
       include: { assessment: true, session: true },
@@ -40,6 +41,11 @@ export async function getEmployeeDashboard(userId: string) {
     gapMap,
     rankedGaps,
     recommendations,
+    // Development Map data (§ Development Map plan): a flat ordered trail derived from
+    // `recommendations` with no extra DB round trip, plus this user's standing among peers who
+    // share both cadre and target role.
+    developmentTrail: recommendations.length ? buildDevelopmentTrail(recommendations) : [],
+    peerStanding,
     activeAttempts,
     // Progress history / score trend — chronological, chart-ready as-is.
     progressHistory: history.map((a) => ({
@@ -51,6 +57,83 @@ export async function getEmployeeDashboard(userId: string) {
       submittedAt: a.submittedAt,
     })),
     availableAssessments,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Peer standing (Development Map)
+// ---------------------------------------------------------------------------
+
+export interface PeerStanding {
+  cadre: string;
+  targetRoleTitle: string;
+  peerCount: number;
+  myAverageGap: number;
+  rank: number;
+  percentile: number | null; // null when peerCount < 2 — no meaningful percentile with no peers
+}
+
+// Same cadre-grouping idiom as getWorkforceHeatmap below, narrowed further to the user's own
+// target role so "peers" means people being measured against the same requirement vector, not
+// just the same cadre. Ranks by average gap (smaller = better standing) — the identical scalar
+// the frontend already computes client-side as realGapIndexNum, so the language stays consistent
+// between the employee dashboard and this panel.
+//
+// Deliberately does NOT call getGapMap() per peer — that was the first version, and measured
+// ~9-10s end-to-end against a real (non-local) Postgres instance for a 6-person peer group,
+// because it's N sequential multi-query round trips instead of a fixed few. Every peer shares the
+// same targetRoleId (that's the grouping key), so the requirement vector only needs to be fetched
+// once; every peer's scores are fetched in a single `IN` query instead of one call each. This
+// reproduces getGapMap's exact gap formula (max(0, required - current), averaged) without its
+// per-user query cost.
+export async function getPeerStanding(userId: string): Promise<PeerStanding | null> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { targetRole: true } });
+  if (!user?.cadre || !user.targetRoleId || !user.targetRole) return null;
+
+  const peers = await prisma.user.findMany({
+    where: { role: "learner", cadre: user.cadre, targetRoleId: user.targetRoleId },
+    select: { id: true },
+  });
+  if (peers.length < 2) return null;
+
+  const requirements = await prisma.roleCompetencyRequirement.findMany({
+    where: { targetRoleId: user.targetRoleId },
+    select: { subSkillId: true, requiredLevel: true },
+  });
+
+  const peerIds = peers.map((p) => p.id);
+  const scores = await prisma.userCompetencyScore.findMany({
+    where: { userId: { in: peerIds }, subSkillId: { in: requirements.map((r) => r.subSkillId) } },
+    select: { userId: true, subSkillId: true, level: true },
+  });
+  const scoreByUserAndSkill = new Map(scores.map((s) => [`${s.userId}:${s.subSkillId}`, s.level]));
+
+  const avg = (nums: number[]) => (nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0);
+
+  const standings = peerIds.map((peerId) => {
+    const gaps = requirements.map((req) => {
+      const current = scoreByUserAndSkill.get(`${peerId}:${req.subSkillId}`) ?? 0;
+      return Math.max(0, req.requiredLevel - current);
+    });
+    return { userId: peerId, avgGap: avg(gaps) };
+  });
+
+  standings.sort((a, b) => a.avgGap - b.avgGap);
+  const myIndex = standings.findIndex((s) => s.userId === userId);
+  // The caller may not be part of the peer set (e.g. a trainer/org_admin account that still has a
+  // cadre + targetRoleId set hitting the employee dashboard) — the peers query is scoped to
+  // role: "learner". Without this, `standings[-1]` is undefined and `.avgGap` below throws a 500.
+  if (myIndex === -1) return null;
+  const mine = standings[myIndex];
+  const peersWithStrictlyLargerGap = standings.filter((s) => s.avgGap > mine.avgGap).length;
+
+  return {
+    cadre: user.cadre,
+    targetRoleTitle: user.targetRole.title,
+    peerCount: standings.length,
+    myAverageGap: Math.round(mine.avgGap),
+    rank: myIndex + 1,
+    percentile: Math.round((peersWithStrictlyLargerGap / (standings.length - 1)) * 100),
   };
 }
 
