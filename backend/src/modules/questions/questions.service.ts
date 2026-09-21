@@ -82,7 +82,25 @@ async function generateForChunk(
   return null;
 }
 
-export async function generateQuestionsForDocument(documentId: string) {
+// Generation is fundamentally one-MCQ-per-chunk — there's no "generate N items from this one
+// chunk" mode, so hitting a target count is a chunk-selection problem, not a generation-count
+// problem. Below the target, every chunk gets used already; above it, only this many get picked.
+const MAX_TARGET_COUNT = 30;
+
+// Evenly spread across the whole document rather than just the first N chunks — a document's
+// later sections deserve the same shot at being covered as its opening ones.
+function selectChunksForTarget(chunks: Chunk[], targetCount: number): { selected: Chunk[]; reserve: Chunk[] } {
+  if (targetCount >= chunks.length) return { selected: chunks, reserve: [] };
+  const stride = chunks.length / targetCount;
+  const selectedIndices = new Set<number>();
+  for (let i = 0; i < targetCount; i++) selectedIndices.add(Math.floor(i * stride));
+  const selected: Chunk[] = [];
+  const reserve: Chunk[] = [];
+  chunks.forEach((chunk, i) => (selectedIndices.has(i) ? selected : reserve).push(chunk));
+  return { selected, reserve };
+}
+
+export async function generateQuestionsForDocument(documentId: string, targetCount?: number) {
   const document = await prisma.sourceDocument.findUnique({
     where: { id: documentId },
     include: { chunks: { orderBy: { sequence: "asc" } } },
@@ -91,28 +109,66 @@ export async function generateQuestionsForDocument(documentId: string) {
   if (document.status !== "processed") {
     throw new ApiError(409, `Document is not ready for generation (status: ${document.status}).`);
   }
+  if (targetCount !== undefined && (targetCount < 1 || targetCount > MAX_TARGET_COUNT)) {
+    throw new ApiError(400, `targetCount must be between 1 and ${MAX_TARGET_COUNT}.`);
+  }
+
+  const totalChunksInDocument = document.chunks.length;
+  const { selected, reserve } = targetCount
+    ? selectChunksForTarget(document.chunks, targetCount)
+    : { selected: document.chunks, reserve: [] as Chunk[] };
 
   // Soft prompt guidance alone doesn't reliably hold the negated-stem ratio down (measured ~62%
   // negated vs. a ~20-25% target in a small-batch test). This tracks the running ratio for the
-  // batch and forces an affirmative stem (see mcqPrompt.ts) once it hits the ceiling, until the
-  // ratio drops back under it.
+  // whole run (including the gap-closing passes below) and forces an affirmative stem (see
+  // mcqPrompt.ts) once it hits the ceiling, until the ratio drops back under it.
   const NEGATED_STEM_RATIO_CEILING = 0.25;
   let totalGenerated = 0;
   let negatedGenerated = 0;
 
   const results = { generated: 0, failedChunkIds: [] as string[] };
-  for (const chunk of document.chunks) {
+  const attempt = async (chunk: Chunk) => {
     const forceAffirmative = totalGenerated > 0 && negatedGenerated / totalGenerated >= NEGATED_STEM_RATIO_CEILING;
     const question = await generateForChunk(chunk, forceAffirmative);
     if (question) {
       results.generated++;
       totalGenerated++;
       if (question.isNegatedStem) negatedGenerated++;
-    } else {
-      results.failedChunkIds.push(chunk.id);
+      return true;
+    }
+    results.failedChunkIds.push(chunk.id);
+    return false;
+  };
+
+  for (const chunk of selected) await attempt(chunk);
+
+  if (targetCount) {
+    // Gap-closing, phase 1: chunks genuinely never attempted yet (the reserve, when the document
+    // had more chunks than the target) — new content, not a re-roll of something already rejected.
+    for (const chunk of reserve) {
+      if (results.generated >= targetCount) break;
+      await attempt(chunk);
+    }
+
+    // Gap-closing, phase 2: every chunk in the document has now had one attempt. If validation
+    // rejections still leave a gap, give previously-failed chunks a second try — but bounded, not
+    // indefinite: at most `targetCount` extra attempts total, and each failed chunk gets retried
+    // at most once here (generateForChunk already retries internally up to MAX_ATTEMPTS_PER_CHUNK
+    // per attempt, so a second full attempt is a meaningfully different roll, not a rubber-stamp).
+    const retryCandidates = [...results.failedChunkIds];
+    let extraAttempts = 0;
+    for (const chunkId of retryCandidates) {
+      if (results.generated >= targetCount || extraAttempts >= targetCount) break;
+      extraAttempts++;
+      const chunk = document.chunks.find((c) => c.id === chunkId)!;
+      // Remove it first — attempt() re-pushes on a second failure, and without this a chunk
+      // retried here and failed again would end up duplicated in the list.
+      results.failedChunkIds = results.failedChunkIds.filter((id) => id !== chunkId);
+      await attempt(chunk);
     }
   }
-  return results;
+
+  return { ...results, targetCount: targetCount ?? null, totalChunksInDocument };
 }
 
 export interface GenerateDiagnosticBatchInput {

@@ -82,8 +82,11 @@ export function uploadDocument(file) {
   return apiFetch("/api/documents", { method: "POST", body: formData });
 }
 
-export function generateForDocument(documentId) {
-  return apiFetch(`/api/documents/${documentId}/generate`, { method: "POST" });
+export function generateForDocument(documentId, targetCount) {
+  return apiFetch(`/api/documents/${documentId}/generate`, {
+    method: "POST",
+    body: targetCount ? { targetCount } : {},
+  });
 }
 
 export function listQuestions({ status, documentId, chunkId, isNegatedStem, page, pageSize } = {}) {

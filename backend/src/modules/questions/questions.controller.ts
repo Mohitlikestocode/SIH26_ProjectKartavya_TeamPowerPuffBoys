@@ -3,9 +3,15 @@ import { z } from "zod";
 import * as service from "./questions.service";
 import { ApiError } from "@/middleware/errorHandler";
 
+const generateForDocumentSchema = z.object({
+  targetCount: z.coerce.number().int().min(1).max(30).optional(),
+});
+
 export async function generateForDocument(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await service.generateQuestionsForDocument(req.params.id);
+    const parsed = generateForDocumentSchema.safeParse(req.body ?? {});
+    if (!parsed.success) throw new ApiError(400, `Invalid request body: ${parsed.error.message}`);
+    const result = await service.generateQuestionsForDocument(req.params.id, parsed.data.targetCount);
     res.status(202).json(result);
   } catch (err) {
     next(err);

@@ -77,14 +77,14 @@ export default function TrainerUpload({ v }) {
               <div style={css("font-size:11.5px; color:#5A6C86; margin-top:6px; line-height:1.5")}>Course mapping is a display label only for now — the backend doesn't yet link generated questions to a course.</div>
             </div>
             <div style={css("background:#F7F9FC; border:1px solid #DDE1E7; border-radius:8px; padding:12px 14px; font-size:12px; color:#7A8492; line-height:1.6")}>
-              Item count, item types, difficulty mix and output language below aren't wired to the backend yet — real generation produces one MCQ per chunk for the whole document (English only), decided by validation, not a target count.
+              Item types, difficulty mix and output language below aren't wired to the backend yet. Number of items IS real: generation aims for approximately your target by sampling chunks across the whole document — a short document may honestly land below it rather than padding with repetitive or low-quality items.
             </div>
-            <div style={css("opacity:0.5; pointer-events:none")}>
-              <label style={css("display:block; font-size:12.5px; font-weight:700; color:#123E7C; margin-bottom:6px")}>Number of items</label>
+            <div>
+              <label style={css("display:block; font-size:12.5px; font-weight:700; color:#123E7C; margin-bottom:6px")}>Number of items (target — actual may vary with document length)</label>
               <div style={css("display:flex; gap:8px; flex-wrap:wrap; align-items:center")}>
-                <button style={css(`font:inherit; font-size:13px; font-weight:700; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c10Bg}; color:${v.c10Fg}; border-radius:24px`)}>10</button>
-                <button style={css(`font:inherit; font-size:13px; font-weight:700; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c20Bg}; color:${v.c20Fg}; border-radius:24px`)}>20</button>
-                <button style={css(`font:inherit; font-size:13px; font-weight:700; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c30Bg}; color:${v.c30Fg}; border-radius:24px`)}>30</button>
+                <button onClick={v.setCount10} style={css(`font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c10Bg}; color:${v.c10Fg}; border-radius:24px`)}>10</button>
+                <button onClick={v.setCount20} style={css(`font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c20Bg}; color:${v.c20Fg}; border-radius:24px`)}>20</button>
+                <button onClick={v.setCount30} style={css(`font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:9px 16px; border:1px solid #C9D6E8; background:${v.c30Bg}; color:${v.c30Fg}; border-radius:24px`)}>30</button>
               </div>
             </div>
             <div style={css("display:grid; gap:9px")}>
@@ -105,15 +105,24 @@ export default function TrainerUpload({ v }) {
               </div>
             )}
 
-            {generated && (
-              <div style={css("padding:14px 16px; border:1px solid #BBDEC7; background:#F4FAF6; border-radius:8px")}>
-                <div style={css("font-size:13.5px; font-weight:700; color:#166534")}>
-                  Generated {v.generateResult.generated} question(s)
-                  {v.generateResult.failedChunkIds.length > 0 && ` · ${v.generateResult.failedChunkIds.length} chunk(s) failed validation`}
+            {generated && (() => {
+              const r = v.generateResult;
+              const metTarget = !r.targetCount || r.generated >= r.targetCount;
+              return (
+                <div style={css(`padding:14px 16px; border:1px solid ${metTarget ? "#BBDEC7" : "#F3CFA6"}; background:${metTarget ? "#F4FAF6" : "#FDF0E4"}; border-radius:8px`)}>
+                  <div style={css(`font-size:13.5px; font-weight:700; color:${metTarget ? "#166534" : "#9A4A0B"}`)}>
+                    Generated {r.generated} question(s){r.targetCount ? ` (target was ${r.targetCount})` : ""}
+                    {r.failedChunkIds.length > 0 && ` · ${r.failedChunkIds.length} chunk(s) failed validation`}
+                  </div>
+                  {!metTarget && (
+                    <div style={css("font-size:12px; color:#7A4A0B; margin-top:4px")}>
+                      This document has {r.totalChunksInDocument} chunk(s) total — its content only supports about {r.generated} distinct question(s) at good quality. Requesting more from shorter material risks repetitive or low-quality questions, so generation stopped here rather than padding the count.
+                    </div>
+                  )}
+                  <div style={css("font-size:12px; color:#3B424E; margin-top:4px")}>Review them on the next screen before anything is approved.</div>
                 </div>
-                <div style={css("font-size:12px; color:#3B424E; margin-top:4px")}>Review them on the next screen before anything is approved.</div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </div>

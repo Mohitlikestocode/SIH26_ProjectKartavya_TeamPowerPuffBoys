@@ -804,7 +804,7 @@ export default function App() {
       if (!st.uploadedDoc) return;
       setState({ generateStatus: "generating", generateError: null, generateResult: null });
       try {
-        const result = await generateForDocument(st.uploadedDoc.id);
+        const result = await generateForDocument(st.uploadedDoc.id, parseInt(st.genCount, 10) || undefined);
         setState({ generateStatus: "done", generateResult: result });
       } catch (err) {
         setState({ generateStatus: "error", generateError: err.message });
