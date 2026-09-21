@@ -16,6 +16,12 @@ RUN npm run build
 # ---- Stage 2: build the backend ----
 FROM node:20-slim AS backend-build
 WORKDIR /app/backend
+# node:20-slim is Debian bookworm with no libssl installed. Prisma's `generate` postinstall hook
+# (triggered by `npm install` below) probes the OS's OpenSSL version to pick the matching query
+# engine binary — without openssl present here, it can pick the wrong engine variant and crash
+# at runtime ("Unable to require libquery_engine...", "OpenSSL ... not found") even though this
+# build stage itself completes.
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 COPY backend/package*.json ./
 # schema.prisma must exist before `npm install`, because installing @prisma/client runs its own
 # `prisma generate` postinstall hook against it — without this, that hook runs with no schema
@@ -30,6 +36,10 @@ FROM node:20-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=7860
+# Same reason as stage 2: the query engine binary copied in from backend-build's node_modules
+# dynamically links against libssl at process start (both `prisma migrate deploy` and the server
+# itself), so it has to be present in this final image too, not just the build stage.
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=backend-build /app/backend/package*.json ./
 COPY --from=backend-build /app/backend/node_modules ./node_modules
