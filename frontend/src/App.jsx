@@ -47,6 +47,10 @@ const initialState = {
   lang: "EN", scale: 1, contrast: false,
   scanner: false, scanInfo: false, assistant: false,
   prefs: false, acct: false,
+  // Screens visited since the last role-home landing, so Header's Back button can pop to
+  // wherever the user actually came from instead of always dead-ending at the role dashboard.
+  screenStack: [],
+  loginEmail: "learner@kartavya.gov.in", loginPassword: "",
   genCount: "20", genCourse: 1, genLang: "English",
   // Real upload/generation state (Step 2 of the frontend/backend integration) — replaces the old
   // fake `generated` flag + setTimeout simulation.
@@ -70,6 +74,10 @@ const initialState = {
   // static ASSIST seed lines from data.js rather than replacing them.
   assistTurns: [], assistInput: "", assistBusy: false, assistError: null,
   assistRecording: false, assistTranscribing: false, assistPlayingIdx: null, assistSpeechLang: null,
+  // Which input method produced the text currently in the box — "voice" right after a successful
+  // transcription, "text" the moment the user types anything (including editing a transcript).
+  // Read once at send time to decide whether that reply should auto-play, then reset to "text".
+  assistInputMode: "text", assistAudioLoadingIdx: null,
 };
 
 function levels(state) {
@@ -104,7 +112,14 @@ export default function App() {
   const L = LOGIN[st.role || st.loginTab];
   const t = TARGETS[st.target];
   const lv = levels(st);
-  const go = (s) => () => setState({ screen: s });
+  const go = (s) => () => setState((prev) => (
+    prev.screen === s ? prev : { screen: s, screenStack: [...prev.screenStack, prev.screen] }
+  ));
+  const goBack = () => setState((prev) => {
+    const stack = [...prev.screenStack];
+    const prevScreen = stack.pop();
+    return prevScreen ? { screen: prevScreen, screenStack: stack } : prev;
+  });
 
   // Restore a session across page refresh: the token itself is the only thing that survives
   // (React state resets to initialState on reload), so re-derive role/authUser from it via
@@ -267,34 +282,39 @@ export default function App() {
   };
   const tl = tab("learner"), tt = tab("trainer"), ta = tab("admin");
   // Seeded demo accounts (backend/prisma/seed/index.ts: "3 demo users, password: password123").
-  // The mock sign-in screen has no real email/password inputs (they're readonly placeholders), so
-  // this maps the selected role tab straight to its matching seeded account rather than adding
-  // real credential fields to a screen that's otherwise still the design-fidelity mock.
+  // Only used to prefill the email field as a convenience hint when a tab is picked — the actual
+  // request always sends whatever is currently typed in the (real, editable) fields below, so a
+  // wrong password is genuinely rejected by the backend instead of being silently ignored.
   const DEMO_LOGIN_EMAIL = { learner: "learner@kartavya.gov.in", trainer: "trainer@kartavya.gov.in", admin: "admin@kartavya.gov.in" };
+  const selectLoginTab = (r) => setState({ loginTab: r, loginEmail: DEMO_LOGIN_EMAIL[r], loginPassword: "", authError: null });
   const signIn = () => {
     const r = st.loginTab;
-    const mockLandingScreen = r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics";
-    // No backend deployed yet for this prototype (frontend-only phase) — always land the demo on
-    // its screen instead of dead-ending on a login error. When a real backend IS reachable, this
-    // still authenticates for real and layers live data on top; when it isn't, it falls back to
-    // exactly the same polished, fully-functional local-mock experience the app always had.
-    api.login(DEMO_LOGIN_EMAIL[r], "password123")
+    const landingScreen = r === "learner" ? "ldash" : r === "trainer" ? "tstudio" : "oanalytics";
+    setState({ authBusy: true, authError: null });
+    // Real POST /api/auth/login with whatever the user actually typed — a wrong email/password
+    // is rejected with the backend's real 401, not silently waved through. If no backend is
+    // reachable at all, that failure is shown as-is rather than faking a successful sign-in.
+    api.login(st.loginEmail, st.loginPassword)
       .then(({ token, user }) => {
         // Persist the token so the session-restore useEffect above actually has something to
         // rehydrate from on refresh — without this that effect is dead code (it only ever
         // getItem/removeItem's a key nothing writes).
         try { localStorage.setItem("kartavya_token", token); } catch { /* private mode */ }
         setState({
-          role: r, acct: false, prefs: false, screen: mockLandingScreen,
-          authToken: token, authUser: user, authError: null,
+          role: r, acct: false, prefs: false, screen: landingScreen, screenStack: [],
+          authToken: token, authUser: user, authError: null, authBusy: false,
         });
         loadEmployeeDashboard(token);
         if (r === "learner") checkSimulationStatus(token);
       })
-      .catch(() => {
-        setState({ role: r, acct: false, prefs: false, screen: mockLandingScreen, authToken: null, authUser: null, authError: null });
+      .catch((err) => {
+        setState({ authBusy: false, authError: err.message || "Invalid Employee ID or password." });
       });
   };
+  // No real government IdP behind this yet — clicking it must not pretend to sign anyone in.
+  const parichaySignIn = () => setState({
+    authError: "Continue with Parichay isn't connected to a real identity provider yet — sign in with the Employee ID and password above.",
+  });
 
   // Second half of the "two kinds of tests" onboarding: a situation simulation, alongside the MCQ
   // diagnostic above. Checked once at login (so a learner who already completed it isn't asked
@@ -496,7 +516,10 @@ export default function App() {
   const doAssistSend = async () => {
     const text = st.assistInput.trim();
     if (!text || st.assistBusy) return;
-    setState({ assistBusy: true, assistError: null, assistInput: "" });
+    // Captured before reset — this is the real signal for whether the question that's about to
+    // get a reply was asked by voice or by typing, not a guess made after the fact.
+    const modeUsed = st.assistInputMode;
+    setState({ assistBusy: true, assistError: null, assistInput: "", assistInputMode: "text" });
     // Flatten prior turns into the {role, content} pairs the backend expects — each past turn
     // contributes both sides of the exchange, in order.
     const history = st.assistTurns.flatMap((turn) => [
@@ -505,9 +528,17 @@ export default function App() {
     ]);
     try {
       const { reply } = await assistantChat(text, history);
-      setState((s) => ({ assistTurns: [...s.assistTurns, { q: text, a: reply }], assistBusy: false }));
+      let newIdx;
+      setState((s) => {
+        const assistTurns = [...s.assistTurns, { q: text, a: reply, mode: modeUsed }];
+        newIdx = ASSIST.length + assistTurns.length - 1;
+        return { assistTurns, assistBusy: false };
+      });
+      // Voice-asked questions get their reply spoken automatically — no click needed. Text-asked
+      // ones stay text-first; the reply is still just a Play click away.
+      if (modeUsed === "voice") doPlayReply(newIdx, reply);
     } catch (err) {
-      setState({ assistBusy: false, assistError: err.message, assistInput: text });
+      setState({ assistBusy: false, assistError: err.message, assistInput: text, assistInputMode: modeUsed });
     }
   };
 
@@ -528,7 +559,10 @@ export default function App() {
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         try {
           const { transcript, languageCode } = await assistantTranscribe(blob);
-          setState({ assistTranscribing: false, assistInput: transcript, assistSpeechLang: languageCode || null });
+          setState({
+            assistTranscribing: false, assistInput: transcript, assistSpeechLang: languageCode || null,
+            assistInputMode: "voice",
+          });
         } catch (err) {
           setState({ assistTranscribing: false, assistError: err.message });
         }
@@ -542,17 +576,20 @@ export default function App() {
   };
 
   const doPlayReply = async (idx, text) => {
-    if (st.assistPlayingIdx === idx) return;
-    setState({ assistPlayingIdx: idx, assistError: null });
+    if (st.assistPlayingIdx === idx || st.assistAudioLoadingIdx === idx) return;
+    // Two distinct phases, shown differently in the UI: fetching the TTS audio from Sarvam (can
+    // take a moment) vs. actually playing it back once it's ready.
+    setState({ assistAudioLoadingIdx: idx, assistPlayingIdx: null, assistError: null });
     try {
       const blob = await assistantSpeak(text, st.assistSpeechLang || undefined);
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.onended = () => { setState({ assistPlayingIdx: null }); URL.revokeObjectURL(url); };
       audio.onerror = () => { setState({ assistPlayingIdx: null, assistError: "Could not play the reply." }); URL.revokeObjectURL(url); };
+      setState({ assistAudioLoadingIdx: null, assistPlayingIdx: idx });
       await audio.play();
     } catch (err) {
-      setState({ assistPlayingIdx: null, assistError: err.message });
+      setState({ assistAudioLoadingIdx: null, assistPlayingIdx: null, assistError: err.message });
     }
   };
 
@@ -562,13 +599,14 @@ export default function App() {
     isAuthed: !!st.role, isGuest: !st.role,
     navItems, userName: L.name, initials: L.initials, roleLabel: L.roleLabel, roleColor: L.color,
     userDesig: L.desig, userFirst: "Anandi",
-    goHome: () => setState({ screen: st.role === "learner" ? "ldash" : st.role === "trainer" ? "tstudio" : st.role === "admin" ? "oanalytics" : "landing" }),
+    goHome: () => setState({ screen: st.role === "learner" ? "ldash" : st.role === "trainer" ? "tstudio" : st.role === "admin" ? "oanalytics" : "landing", screenStack: [] }),
+    goBack, canGoBack: st.screenStack.length > 0,
     goSignin: go("signin"), goCatalogue: go("lcat"), goSystem: go("system"),
     goDash: go("ldash"), goHub: go("lhub"), goAssess: go("lassess"), goReview: go("lresult"),
     goStudio: go("tstudio"), goUpload: go("tupload"),
     signOut: () => {
       try { localStorage.removeItem("kartavya_token"); } catch { /* private mode */ }
-      setState({ role: null, screen: "landing", acct: false, prefs: false, assistant: false, authToken: null, authUser: null, employeeDashboard: null });
+      setState({ role: null, screen: "landing", screenStack: [], acct: false, prefs: false, assistant: false, authToken: null, authUser: null, employeeDashboard: null });
     },
     openScanner: () => setState({ scanner: true }),
     closeScanner: () => setState({ scanner: false }),
@@ -585,10 +623,16 @@ export default function App() {
     assistLines: [...ASSIST, ...st.assistTurns].map((turn, i) => ({
       q: turn.q, a: turn.a,
       isPlaying: st.assistPlayingIdx === i,
+      isLoadingAudio: st.assistAudioLoadingIdx === i,
+      // Seed lines have no `mode` (never auto-played); real turns are "voice" only when that
+      // exact question was asked by voice, per assistInputMode at send time.
+      wasAskedByVoice: turn.mode === "voice",
       onPlay: () => doPlayReply(i, turn.a),
     })),
     assistInput: st.assistInput,
-    onAssistInput: (e) => setState({ assistInput: e.target.value }),
+    // Any manual keystroke means the box is now text-composed, even if it started from a voice
+    // transcript — so it no longer counts as a voice-asked question once edited.
+    onAssistInput: (e) => setState({ assistInput: e.target.value, assistInputMode: "text" }),
     onAssistKeyDown: (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAssistSend(); } },
     onAssistSend: doAssistSend,
     canAssistSend: st.assistInput.trim().length > 0 && !st.assistBusy,
@@ -609,14 +653,17 @@ export default function App() {
     startSimulation, simLoading: st.simLoading, simLoadError: st.simLoadError,
     isHindi: st.lang === "HI",
     assessed: realAssessed, notAssessed: !realAssessed,
-    tabLearner: () => setState({ loginTab: "learner" }), tabTrainer: () => setState({ loginTab: "trainer" }), tabAdmin: () => setState({ loginTab: "admin" }),
+    tabLearner: () => selectLoginTab("learner"), tabTrainer: () => selectLoginTab("trainer"), tabAdmin: () => selectLoginTab("admin"),
     tabLFg: tl.fg, tabLBorder: tl.border, tabLW: tl.w, tabLBg: tl.bg,
     tabTFg: tt.fg, tabTBorder: tt.border, tabTW: tt.w, tabTBg: tt.bg,
     tabAFg: ta.fg, tabABorder: ta.border, tabAW: ta.w, tabABg: ta.bg,
     loginRoleTitle: L.title, loginRoleNote: L.note, loginRoleInitial: L.initial, loginRoleColor: L.color,
-    loginIdLabel: L.idLabel, loginIdValue: L.idValue,
+    loginIdLabel: L.idLabel,
+    loginIdValue: st.loginEmail, onLoginIdChange: (e) => setState({ loginEmail: e.target.value }),
+    loginPasswordValue: st.loginPassword, onLoginPasswordChange: (e) => setState({ loginPassword: e.target.value }),
     doSignIn: signIn, signInBusy: st.authBusy, signInError: st.authError,
     signInLabel: st.authBusy ? "Signing in…" : "Login",
+    doParichaySignIn: parichaySignIn,
     onTargetSelect: (e) => setState({ target: parseInt(e.target.value, 10) }),
     targetIdx: String(st.target), targetName: t.name, targetTrack: t.track, targetNote: t.note,
     targetReqs: D.map((d, i) => ({ label: DOM[d].label, color: DOM[d].color, value: t.req[i].toFixed(1), pct: (t.req[i] / 5 * 100).toFixed(0) + "%" })),

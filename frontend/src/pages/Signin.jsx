@@ -69,12 +69,12 @@ export default function Signin({ v }) {
             </div>
 
             <label style={css("display:block; font-size:13px; font-weight:600; color:#1B5CB8; margin-bottom:6px")}>{v.loginIdLabel}</label>
-            <input type="text" value={v.loginIdValue} readOnly style={css("width:100%; font:inherit; font-size:14.5px; padding:13px 14px; border:1.5px solid #1B5CB8; background:#fff; color:#1A1D23; border-radius:8px")} />
+            <input type="text" value={v.loginIdValue} onChange={v.onLoginIdChange} autoComplete="username" style={css("width:100%; font:inherit; font-size:14.5px; padding:13px 14px; border:1.5px solid #1B5CB8; background:#fff; color:#1A1D23; border-radius:8px")} />
             <div style={css("display:flex; justify-content:flex-end; margin-top:6px")}><a href="#main" style={css("font-size:12.5px; font-weight:600")}>Forgot password?</a></div>
             <label style={css("display:block; font-size:13px; font-weight:600; color:#1B5CB8; margin:12px 0 6px")}>Password</label>
-            <input type="password" value="demo-password" readOnly style={css("width:100%; font:inherit; font-size:14.5px; padding:13px 14px; border:1px solid #C9D6E8; background:#fff; color:#1A1D23; border-radius:8px")} />
+            <input type="password" value={v.loginPasswordValue} onChange={v.onLoginPasswordChange} autoComplete="current-password" placeholder="Enter password" style={css("width:100%; font:inherit; font-size:14.5px; padding:13px 14px; border:1px solid #C9D6E8; background:#fff; color:#1A1D23; border-radius:8px")} />
 
-            <div style={css("display:flex; align-items:center; gap:12px; margin-top:16px; padding:12px 14px; border:1px solid #DDE3EC; border-radius:8px; background:#FBFCFE; flex-wrap:wrap")}>
+            <div title="Visual placeholder — not a real captcha check in this build" style={css("display:flex; align-items:center; gap:12px; margin-top:16px; padding:12px 14px; border:1px solid #DDE3EC; border-radius:8px; background:#FBFCFE; flex-wrap:wrap")}>
               <span style={css("width:22px; height:22px; border:2px solid #9FB3CC; border-radius:4px; background:#fff; flex-shrink:0")}></span>
               <span style={css("font-size:13.5px; color:#41506B; flex:1; min-width:120px")}>I am not a robot</span>
               <span style={css("font-family:'IBM Plex Mono',monospace; font-size:15px; letter-spacing:0.2em; color:#123E7C; background:repeating-linear-gradient(135deg,#EDF1F7 0 6px,#F7F9FC 6px 12px); border:1px solid #C9D6E8; padding:7px 11px; border-radius:6px")}>7K4Q9</span>
@@ -85,7 +85,7 @@ export default function Signin({ v }) {
             <div style={css("display:flex; align-items:center; gap:12px; margin:18px 0")}>
               <div style={css("flex:1; height:1px; background:#E3E9F2")}></div><span style={css("font-size:12px; color:#7A8AA3")}>or</span><div style={css("flex:1; height:1px; background:#E3E9F2")}></div>
             </div>
-            <button onClick={v.doSignIn} className="btn-parichay" style={css("font:inherit; width:100%; font-size:14.5px; font-weight:700; cursor:pointer; padding:14px 16px; border:1.5px solid #F58220; background:#fff; color:#C25E10; border-radius:8px")}>Continue with Parichay Single Sign-On</button>
+            <button onClick={v.doParichaySignIn} title="Not connected to a real identity provider yet" className="btn-parichay" style={css("font:inherit; width:100%; font-size:14.5px; font-weight:700; cursor:pointer; padding:14px 16px; border:1.5px solid #F58220; background:#fff; color:#C25E10; border-radius:8px")}>Continue with Parichay Single Sign-On <span style={css("font-weight:600; color:#9A6A45")}>(not yet connected)</span></button>
             <div style={css("display:flex; gap:16px; margin-top:16px; font-size:12.5px; flex-wrap:wrap")}>
               <a href="#main">First-time registration</a><a href="#main">Help centre</a><a href="#main">Accessibility statement</a>
             </div>
