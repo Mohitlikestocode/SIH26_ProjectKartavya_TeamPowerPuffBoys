@@ -107,6 +107,16 @@ export default function App() {
   // nor its accumulating audio chunks should trigger a render on their own.
   const recorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  // The currently-playing (or just-started) assistant reply audio, if any — a ref, not state,
+  // since it's an imperative handle we need to reach into synchronously to stop it, not something
+  // that should trigger a render on its own. Without this, nothing ever paused a prior reply
+  // before a new one started, so two replies playing close together (e.g. a fast manual click
+  // right as an auto-play kicks in) audibly overlapped instead of the new one replacing the old.
+  const currentAudioRef = useRef(null);
+  // Which reply doPlayReply is currently fetching/playing for — a ref (not the `st` closure, which
+  // is a snapshot from whichever render created this call) so a newer call can reliably tell an
+  // older, still-in-flight one that it's been superseded and should bail instead of playing late.
+  const activeReplyIdxRef = useRef(null);
 
   const st = state;
   const L = LOGIN[st.role || st.loginTab];
@@ -513,12 +523,16 @@ export default function App() {
     : "—";
 
   // --- Assistant: text + speech (Sarvam) --------------------------------
-  const doAssistSend = async () => {
-    const text = st.assistInput.trim();
+  // `override` lets a caller hand send() the text/mode directly instead of reading them off `st`
+  // — needed for auto-send straight after transcription, where `st` in this closure is still the
+  // pre-transcription snapshot (the setState that wrote the transcript hasn't been applied to this
+  // render yet), so reading st.assistInput here would send an empty string, not what was just said.
+  const doAssistSend = async (override) => {
+    const text = (override?.text ?? st.assistInput).trim();
     if (!text || st.assistBusy) return;
     // Captured before reset — this is the real signal for whether the question that's about to
     // get a reply was asked by voice or by typing, not a guess made after the fact.
-    const modeUsed = st.assistInputMode;
+    const modeUsed = override?.mode ?? st.assistInputMode;
     setState({ assistBusy: true, assistError: null, assistInput: "", assistInputMode: "text" });
     // Flatten prior turns into the {role, content} pairs the backend expects — each past turn
     // contributes both sides of the exchange, in order.
@@ -535,8 +549,9 @@ export default function App() {
         return { assistTurns, assistBusy: false };
       });
       // Voice-asked questions get their reply spoken automatically — no click needed. Text-asked
-      // ones stay text-first; the reply is still just a Play click away.
-      if (modeUsed === "voice") doPlayReply(newIdx, reply);
+      // ones stay text-first; the reply is still just a Play click away. Same staleness reason as
+      // above for passing languageCode explicitly instead of letting doPlayReply read st itself.
+      if (modeUsed === "voice") doPlayReply(newIdx, reply, override?.languageCode);
     } catch (err) {
       setState({ assistBusy: false, assistError: err.message, assistInput: text, assistInputMode: modeUsed });
     }
@@ -563,6 +578,9 @@ export default function App() {
             assistTranscribing: false, assistInput: transcript, assistSpeechLang: languageCode || null,
             assistInputMode: "voice",
           });
+          // Send immediately once speech stops — no extra click. Passed explicitly rather than
+          // relying on the state just set above, since this closure's `st` won't see it yet.
+          doAssistSend({ text: transcript, mode: "voice", languageCode: languageCode || null });
         } catch (err) {
           setState({ assistTranscribing: false, assistError: err.message });
         }
@@ -575,21 +593,53 @@ export default function App() {
     }
   };
 
-  const doPlayReply = async (idx, text) => {
+  const stopCurrentAudio = () => {
+    const prev = currentAudioRef.current;
+    if (!prev) return;
+    prev.onended = null; // otherwise pausing early would still fire onended and clear playing state
+    prev.onerror = null;
+    prev.pause();
+    currentAudioRef.current = null;
+  };
+
+  const doPlayReply = async (idx, text, languageCodeOverride) => {
     if (st.assistPlayingIdx === idx || st.assistAudioLoadingIdx === idx) return;
+    // Whatever was playing (or mid-fetch) before this call must stop now — without this, a second
+    // reply starting while the first is still going produces two overlapping <audio> elements.
+    stopCurrentAudio();
+    activeReplyIdxRef.current = idx;
     // Two distinct phases, shown differently in the UI: fetching the TTS audio from Sarvam (can
     // take a moment) vs. actually playing it back once it's ready.
     setState({ assistAudioLoadingIdx: idx, assistPlayingIdx: null, assistError: null });
     try {
-      const blob = await assistantSpeak(text, st.assistSpeechLang || undefined);
+      const blob = await assistantSpeak(text, languageCodeOverride ?? st.assistSpeechLang ?? undefined);
+      // The fetch above is async — if a *different* reply (a fresh manual click, or another
+      // auto-play) was requested while this one was still fetching, that newer call already
+      // claimed activeReplyIdxRef. Playing this now-superseded response would itself overlap it.
+      if (activeReplyIdxRef.current !== idx) return;
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
-      audio.onended = () => { setState({ assistPlayingIdx: null }); URL.revokeObjectURL(url); };
-      audio.onerror = () => { setState({ assistPlayingIdx: null, assistError: "Could not play the reply." }); URL.revokeObjectURL(url); };
+      audio.onended = () => {
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        setState({ assistPlayingIdx: null });
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        if (currentAudioRef.current === audio) currentAudioRef.current = null;
+        setState({ assistPlayingIdx: null, assistError: "Could not play the reply." });
+        URL.revokeObjectURL(url);
+      };
+      currentAudioRef.current = audio;
       setState({ assistAudioLoadingIdx: null, assistPlayingIdx: idx });
       await audio.play();
     } catch (err) {
-      setState({ assistAudioLoadingIdx: null, assistPlayingIdx: null, assistError: err.message });
+      if (currentAudioRef.current) currentAudioRef.current = null;
+      setState({
+        assistAudioLoadingIdx: null, assistPlayingIdx: null,
+        assistError: err.name === "NotAllowedError"
+          ? "The browser blocked auto-playing this reply — use the play button to hear it."
+          : err.message,
+      });
     }
   };
 
@@ -745,6 +795,11 @@ export default function App() {
     },
     generateStatus: st.generateStatus, generateResult: st.generateResult, generateError: st.generateError,
     canGenerate: !!st.uploadedDoc && st.generateStatus !== "generating",
+    // The Review screen's default filter — without this it lists every draft question in the
+    // system regardless of which document generated it, so "Generated 3 question(s)" here and
+    // whatever the Review screen shows next can legitimately be different, unrelated numbers.
+    reviewDocumentId: st.generateStatus === "done" ? st.uploadedDoc?.id ?? null : null,
+    reviewDocumentName: st.uploadedDoc?.originalFilename ?? null,
     doGenerate: async () => {
       if (!st.uploadedDoc) return;
       setState({ generateStatus: "generating", generateError: null, generateResult: null });

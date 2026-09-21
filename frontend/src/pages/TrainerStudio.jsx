@@ -197,10 +197,17 @@ export default function TrainerStudio({ v }) {
   const [createSaving, setCreateSaving] = useState(false);
   const [createError, setCreateError] = useState(null);
 
-  const loadPage = (targetPage) => {
+  // Defaults to just-generated document's questions when arriving right after a generate (so the
+  // count here matches "Generated N question(s)" on the previous screen exactly), with an escape
+  // hatch to the full cross-document draft backlog — see v.reviewDocumentId in App.jsx.
+  const [scopeToDocument, setScopeToDocument] = useState(!!v.reviewDocumentId);
+
+  const loadPage = (targetPage, scoped = scopeToDocument) => {
     setLoading(true);
     setLoadError(null);
-    listQuestions({ status: "draft", page: targetPage, pageSize: 20 })
+    const filters = { status: "draft", page: targetPage, pageSize: 20 };
+    if (scoped && v.reviewDocumentId) filters.documentId = v.reviewDocumentId;
+    listQuestions(filters)
       .then((res) => {
         setQuestions((prev) => (targetPage === 1 ? res.data : [...prev, ...res.data]));
         setPage(res.page);
@@ -212,6 +219,8 @@ export default function TrainerStudio({ v }) {
   };
 
   useEffect(() => { loadPage(1); }, []);
+
+  const viewAllDrafts = () => { setScopeToDocument(false); loadPage(1, false); };
 
   const removeFromList = (id) => {
     setQuestions((prev) => prev.filter((q) => q.id !== id));
@@ -269,6 +278,12 @@ export default function TrainerStudio({ v }) {
         <div>
           <h1 style={css("font-family:'Poppins',sans-serif; font-size:28px; font-weight:700; color:#123E7C; margin:0")}>Review draft items</h1>
           <div style={css("font-size:13.5px; color:#5A6C86; margin-top:4px")}>{total} draft question(s) awaiting review · {sessionCounts.approved} approved and {sessionCounts.rejected} rejected this session</div>
+          {scopeToDocument && v.reviewDocumentId && (
+            <div style={css("font-size:12.5px; color:#9A4A0B; margin-top:6px")}>
+              Showing only questions generated from <strong>{v.reviewDocumentName}</strong> ·{" "}
+              <a href="#main" onClick={(e) => { e.preventDefault(); viewAllDrafts(); }} style={css("font-weight:600")}>View all drafts</a>
+            </div>
+          )}
         </div>
         <div style={css("display:flex; align-items:center")}>
           <TrainerCreateTest />
