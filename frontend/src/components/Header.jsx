@@ -49,6 +49,17 @@ export default function Header({ v }) {
             </span>
           </button>
 
+          {v.isAuthed && v.canGoBack && (
+            <button
+              onClick={v.goBack}
+              aria-label="Go back to the previous screen"
+              title="Back"
+              style={css("font:inherit; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; height:36px; padding:0 14px; border:1px solid #C9D6E8; background:#fff; color:#123E7C; border-radius:20px; flex-shrink:0; display:flex; align-items:center; gap:6px")}
+            >
+              ← Back
+            </button>
+          )}
+
           <nav aria-label="Primary" style={css("display:flex; align-items:center; gap:4px; flex-wrap:nowrap; flex:1 1 0%; min-width:0; overflow-x:auto; padding-left:8px")}>
             {v.navItems.map((n, i) => (
               <button
@@ -88,6 +99,14 @@ export default function Header({ v }) {
                   style={css(`font:inherit; cursor:pointer; width:40px; height:40px; border-radius:50%; border:2px solid ${v.acctBorder}; background:${v.roleColor}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700`)}
                 >
                   {v.initials}
+                </button>
+                <button
+                  onClick={v.signOut}
+                  aria-label="Log out"
+                  title="Log out"
+                  style={css("font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; height:40px; padding:0 14px; border:1px solid #E3B0A6; background:#fff; color:#9D2449; border-radius:24px")}
+                >
+                  Log out
                 </button>
               </div>
             )}

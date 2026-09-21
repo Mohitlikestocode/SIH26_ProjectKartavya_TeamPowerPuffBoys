@@ -18,12 +18,17 @@ export default function Assistant({ v }) {
               <div style={css("flex:1; min-width:0; background:#fff; border:1px solid #DDE1E7; padding:11px 13px; border-radius:0 3px 3px 3px; font-size:13.5px; line-height:1.6; color:#1A1D23")}>{a.a}</div>
               <button
                 onClick={a.onPlay}
-                disabled={a.isPlaying}
-                aria-label={a.isPlaying ? "Playing" : "Play this reply aloud"}
-                title={a.isPlaying ? "Playing…" : "Play aloud"}
-                style={css(`flex-shrink:0; font:inherit; font-size:13px; cursor:${a.isPlaying ? "default" : "pointer"}; padding:8px 9px; border:1px solid #DDE1E7; background:#fff; color:${a.isPlaying ? "#F58220" : "#123E7C"}; border-radius:6px; line-height:1`)}
-              >{a.isPlaying ? "♪" : "▶"}</button>
+                disabled={a.isPlaying || a.isLoadingAudio}
+                aria-label={a.isLoadingAudio ? "Generating audio" : a.isPlaying ? "Playing" : "Play this reply aloud"}
+                title={a.isLoadingAudio ? "Generating audio…" : a.isPlaying ? "Playing…" : "Play aloud"}
+                style={css(`flex-shrink:0; font:inherit; font-size:13px; cursor:${a.isPlaying || a.isLoadingAudio ? "default" : "pointer"}; padding:8px 9px; border:1px solid #DDE1E7; background:#fff; color:${a.isPlaying || a.isLoadingAudio ? "#F58220" : "#123E7C"}; border-radius:6px; line-height:1`)}
+              >{a.isLoadingAudio ? "…" : a.isPlaying ? "♪" : "▶"}</button>
             </div>
+            {a.isLoadingAudio && (
+              <div style={css("font-size:11.5px; color:#9A4A0B; margin-top:4px; margin-right:24px; font-style:italic")}>
+                {a.wasAskedByVoice ? "Generating audio reply…" : "Generating audio…"}
+              </div>
+            )}
           </div>
         ))}
         <div style={css("display:flex; align-items:center; gap:8px; font-size:11.5px; color:#7A8492")}>
