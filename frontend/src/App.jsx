@@ -661,6 +661,9 @@ export default function App() {
     loginIdLabel: L.idLabel,
     loginIdValue: st.loginEmail, onLoginIdChange: (e) => setState({ loginEmail: e.target.value }),
     loginPasswordValue: st.loginPassword, onLoginPasswordChange: (e) => setState({ loginPassword: e.target.value }),
+    // Real seeded demo accounts (backend/prisma/seed/index.ts) — same ones DEMO_LOGIN_EMAIL above
+    // prefills the email field with, surfaced here so evaluators know what to type without asking.
+    demoCredentialsHint: `${DEMO_LOGIN_EMAIL[st.loginTab]} / password123`,
     doSignIn: signIn, signInBusy: st.authBusy, signInError: st.authError,
     signInLabel: st.authBusy ? "Signing in…" : "Login",
     doParichaySignIn: parichaySignIn,

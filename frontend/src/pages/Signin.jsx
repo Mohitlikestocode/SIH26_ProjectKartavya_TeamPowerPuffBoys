@@ -73,6 +73,9 @@ export default function Signin({ v }) {
             <div style={css("display:flex; justify-content:flex-end; margin-top:6px")}><a href="#main" style={css("font-size:12.5px; font-weight:600")}>Forgot password?</a></div>
             <label style={css("display:block; font-size:13px; font-weight:600; color:#1B5CB8; margin:12px 0 6px")}>Password</label>
             <input type="password" value={v.loginPasswordValue} onChange={v.onLoginPasswordChange} autoComplete="current-password" placeholder="Enter password" style={css("width:100%; font:inherit; font-size:14.5px; padding:13px 14px; border:1px solid #C9D6E8; background:#fff; color:#1A1D23; border-radius:8px")} />
+            <div style={css("font-size:11.5px; color:#8A93A3; margin-top:7px")}>
+              <span style={css("font-weight:600")}>For evaluation/testing:</span> {v.demoCredentialsHint}
+            </div>
 
             <div title="Visual placeholder — not a real captcha check in this build" style={css("display:flex; align-items:center; gap:12px; margin-top:16px; padding:12px 14px; border:1px solid #DDE3EC; border-radius:8px; background:#FBFCFE; flex-wrap:wrap")}>
               <span style={css("width:22px; height:22px; border:2px solid #9FB3CC; border-radius:4px; background:#fff; flex-shrink:0")}></span>
